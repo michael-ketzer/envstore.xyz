@@ -21,7 +21,7 @@
     "topo": "echo 'db topo ok'"
   },
   "dependencies": {
-    "@prisma/client": "^6.1.0"
+    "@prisma/client": "^7.8.0"
   },
   "devDependencies": {
     "@envstore/config": "workspace:*",

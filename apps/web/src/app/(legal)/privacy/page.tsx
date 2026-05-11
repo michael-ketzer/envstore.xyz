@@ -23,8 +23,10 @@ export default function PrivacyPolicyPage() {
 
       <h2>Who's responsible</h2>
       <p>
-        The data controller (in GDPR terms) is the operator listed in our{' '}
-        <a href="/imprint">Imprint</a>. Reach us at{' '}
+        The data controller (in GDPR terms) is{' '}
+        <strong>Michael Ketzer</strong>, a sole operator based in Germany
+        trading as envstore (full operator address in our{' '}
+        <a href="/imprint">Imprint</a>). Reach us at{' '}
         <a href="mailto:privacy@envstore.xyz">privacy@envstore.xyz</a>.
       </p>
 

@@ -23,6 +23,10 @@ model User {
   emailVerified DateTime?
   image         String?
 
+  // Paddle Customer ID — one record per user, reused across every workspace
+  // they subscribe to. Set on first checkout; never rotated.
+  paddleCustomerId String? @unique
+
   accounts         Account[]
   sessions         Session[]
   recipients       UserRecipient[]
@@ -362,4 +366,17 @@ enum SubscriptionStatus {
   PAST_DUE
   PAUSED
   CANCELED
+}
+
+// Paddle webhook idempotency — we record every event we've processed so retries
+// from Paddle (or replays from our queue) don't double-apply. Rows are kept
+// indefinitely for audit; a future cron can prune events older than ~90 days.
+model PaddleWebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique // Paddle's event_id (evt_...) — the idempotency key
+  eventType   String   // e.g. "subscription.activated"
+  payload     Json     // full webhook body for debugging / replay
+  processedAt DateTime @default(now())
+
+  @@index([eventType, processedAt])
 }

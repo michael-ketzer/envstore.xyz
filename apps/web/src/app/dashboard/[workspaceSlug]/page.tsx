@@ -73,6 +73,12 @@ export default async function WorkspacePage({
             </Link>
           ) : null}
           <Link
+            href={`/dashboard/${urlSlug}/billing`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Billing
+          </Link>
+          <Link
             href={`/dashboard/${urlSlug}/settings`}
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
@@ -92,10 +98,13 @@ export default async function WorkspacePage({
         <Stat label="Projects" value={ws.projects.length} />
         <Stat
           label="Billing"
+          href={`/dashboard/${urlSlug}/billing`}
           value={
-            ws.subscription?.status === 'TRIALING' && ws.subscription.trialEndsAt
-              ? `Trial until ${ws.subscription.trialEndsAt.toLocaleDateString()}`
-              : (ws.subscription?.status?.toLowerCase() ?? '—')
+            isPersonal
+              ? 'Free'
+              : ws.subscription?.status === 'TRIALING' && ws.subscription.trialEndsAt
+                ? `Trial until ${ws.subscription.trialEndsAt.toLocaleDateString()}`
+                : (ws.subscription?.status?.toLowerCase() ?? '—')
           }
         />
         <Stat label="Soft-delete window" value={`${ws.softDeleteRetentionDays}d`} />
@@ -152,11 +161,30 @@ export default async function WorkspacePage({
   );
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-md border border-border p-4">
+function Stat({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: React.ReactNode;
+  href?: string;
+}) {
+  const body = (
+    <>
       <dt className="text-xs uppercase tracking-widest text-muted-foreground">{label}</dt>
       <dd className="mt-2 text-sm font-medium text-foreground">{value}</dd>
-    </div>
+    </>
   );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="rounded-md border border-border p-4 transition-colors hover:border-foreground/30 hover:bg-muted/40"
+      >
+        {body}
+      </Link>
+    );
+  }
+  return <div className="rounded-md border border-border p-4">{body}</div>;
 }

@@ -27,7 +27,17 @@ export type AuditAction =
   | 'recipient.register'
   | 'recipient.revoke'
   | 'cli-token.create'
-  | 'cli-token.revoke';
+  | 'cli-token.revoke'
+  // Billing — webhook-driven and user-initiated
+  | 'billing.subscription.created'
+  | 'billing.subscription.activated'
+  | 'billing.subscription.trialing'
+  | 'billing.subscription.updated'
+  | 'billing.subscription.past_due'
+  | 'billing.subscription.paused'
+  | 'billing.subscription.resumed'
+  | 'billing.subscription.canceled'
+  | 'billing.cancel_requested';
 
 export type RecordAuditInput = {
   workspaceId?: string | null;

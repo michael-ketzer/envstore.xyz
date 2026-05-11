@@ -18,7 +18,9 @@ export default function RefundPolicyPage() {
 
       <h2>Payment processor</h2>
       <p>
-        All payments are processed by our payment provider{' '}
+        envstore is operated by <strong>Michael Ketzer</strong> (sole operator,
+        Germany — full details in our <a href="/imprint">Imprint</a>). All
+        payments for the service are processed by our payment provider{' '}
         <a href="https://www.paddle.com" target="_blank" rel="noreferrer">
           Paddle
         </a>

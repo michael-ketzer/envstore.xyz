@@ -61,6 +61,10 @@ const serverEnvSchema = z.object({
     .transform((v) => v ?? 'sandbox'),
   PADDLE_API_KEY: optionalString,
   PADDLE_WEBHOOK_SECRET: optionalString,
+  // Paddle price ID for the $1.99/mo Team workspace plan. Must be a `pri_…`
+  // identifier from the Paddle dashboard. Unset → checkout endpoint returns
+  // 503 with a friendly "billing not configured" message.
+  PADDLE_PRICE_ID_TEAM: optionalString,
 });
 
 const parsed = serverEnvSchema.safeParse(process.env);
@@ -84,5 +88,7 @@ export const features = {
   r2: Boolean(
     env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET,
   ),
-  paddle: Boolean(env.PADDLE_API_KEY && env.PADDLE_WEBHOOK_SECRET),
+  paddle: Boolean(
+    env.PADDLE_API_KEY && env.PADDLE_WEBHOOK_SECRET && env.PADDLE_PRICE_ID_TEAM,
+  ),
 } as const;

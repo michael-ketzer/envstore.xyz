@@ -21,6 +21,8 @@
     "@envstore/db": "workspace:*",
     "@envstore/shared": "workspace:*",
     "@envstore/ui": "workspace:*",
+    "@paddle/paddle-js": "^1.6.4",
+    "@paddle/paddle-node-sdk": "^3.8.0",
     "lucide-react": "^1.14.0",
     "next": "^16.2.6",
     "next-auth": "5.0.0-beta.25",

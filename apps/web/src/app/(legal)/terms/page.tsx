@@ -23,9 +23,11 @@ export default function TermsOfServicePage() {
         wanted to.
       </p>
       <p>
-        These Terms are an agreement between you and the operator listed in our{' '}
-        <a href="/imprint">Imprint</a> ("we", "us"). By creating an account, you
-        agree to them. If you don't, please don't sign up.
+        These Terms are an agreement between you and <strong>Michael Ketzer</strong>,
+        a sole operator based in Germany trading as envstore ("we", "us"; full
+        operator details, address, and contact in our{' '}
+        <a href="/imprint">Imprint</a>). By creating an account, you agree to them.
+        If you don't, please don't sign up.
       </p>
 
       <h2>Eligibility</h2>
@@ -267,10 +269,11 @@ export default function TermsOfServicePage() {
 
       <h2>Governing law and disputes</h2>
       <p>
-        These Terms are governed by the laws of the operator's country of
-        registration (see <a href="/imprint">Imprint</a>). Disputes will be
-        handled by the competent courts there, unless mandatory consumer
-        protection laws in your country of residence give you a stronger venue.
+        These Terms are governed by the laws of the Federal Republic of Germany,
+        the country in which the operator (Michael Ketzer) is established.
+        Disputes will be handled by the competent courts in Germany, unless
+        mandatory consumer protection laws in your country of residence give
+        you a stronger venue.
       </p>
       <p>
         If you're a consumer in the EU, you have the right to use the European

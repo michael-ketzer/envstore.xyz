@@ -25,6 +25,10 @@ import {
   unauthorized,
 } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
+import {
+  WorkspaceAccessDeniedError,
+  requireWorkspaceWrite,
+} from '@/lib/billing';
 import { buildVersionKey, presignPut, R2NotConfiguredError } from '@/lib/r2';
 
 type Ctx = { params: Promise<{ workspaceSlug: string; projectSlug: string }> };
@@ -61,9 +65,36 @@ export async function POST(req: Request, ctx: Ctx) {
         ],
       },
     },
-    select: { id: true, workspaceId: true },
+    select: {
+      id: true,
+      workspaceId: true,
+      workspace: {
+        select: {
+          type: true,
+          subscription: {
+            select: {
+              status: true,
+              trialEndsAt: true,
+              canceledAt: true,
+              paddleSubscriptionId: true,
+            },
+          },
+        },
+      },
+    },
   });
   if (!project) return notFound('Project not found.');
+
+  // Billing gate — writes (pushes) require 'full' access. Trial-expired,
+  // canceled-past-grace, etc. workspaces are read-only or locked.
+  try {
+    requireWorkspaceWrite(project.workspace);
+  } catch (err) {
+    if (err instanceof WorkspaceAccessDeniedError) {
+      return apiError(err.access.message, 402, 'Open billing in the dashboard to resubscribe.');
+    }
+    throw err;
+  }
 
   let body: unknown;
   try {

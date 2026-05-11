@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest something we could build
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Start with the user need, not the implementation.
+      placeholder: When my CI runs `envstore pull`, it has to interactively authenticate, which doesn't work in non-TTY environments.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would the UX look like?
+      placeholder: Add `ENVSTORE_TOKEN` env var support — the CLI uses it directly without going through the device-code flow.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you think about?
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Links, screenshots, mocks, anything else useful.
+    validations:
+      required: false

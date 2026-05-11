@@ -1,0 +1,29 @@
+{
+  "name": "@envstore/shared",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./constants": "./src/constants.ts",
+    "./slug": "./src/slug.ts",
+    "./text-check": "./src/text-check.ts",
+    "./envstore-config": "./src/envstore-config.ts",
+    "./env-filename": "./src/env-filename.ts",
+    "./schemas": "./src/schemas/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "topo": "echo 'shared topo ok'"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@envstore/config": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

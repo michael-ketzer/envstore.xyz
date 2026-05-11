@@ -1,0 +1,33 @@
+{
+  "name": "envstore",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zero-knowledge encrypted .env file storage. You keep the keys.",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20.9.0",
+    "pnpm": ">=11"
+  },
+  "packageManager": "pnpm@11.0.9",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "db:generate": "pnpm --filter @envstore/db generate",
+    "db:migrate": "pnpm --filter @envstore/db migrate",
+    "db:push": "pnpm --filter @envstore/db push",
+    "db:studio": "pnpm --filter @envstore/db studio",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.0",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,365 @@
+// envstore — data model
+// Hierarchy: Workspace → Project → Environment → EnvFileVersion (with rollback pointer)
+// Zero-knowledge: only PUBLIC recipients (age1.../ssh-ed25519) ever touch the DB.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =============================================================================
+// Auth.js v5 standard tables
+// =============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts         Account[]
+  sessions         Session[]
+  recipients       UserRecipient[]
+  workspaceMembers     WorkspaceMember[]
+  ownedWorkspaces      Workspace[]            @relation("WorkspaceOwner")
+  cliTokens            CliToken[]
+  auditLogs            AuditLog[]
+  invitesSent          Invite[]               @relation("InvitedBy")
+  versionsCreated      EnvFileVersion[]
+  deviceAuthorizations DeviceAuthorization[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Reused for Email OTP: identifier=email, token=sha256(code), expires=10min
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+  attempts   Int      @default(0)
+  type       String   @default("email-otp")
+
+  @@id([identifier, token])
+  @@index([identifier])
+}
+
+// =============================================================================
+// Zero-knowledge identity — PUBLIC recipients only.
+// We deliberately never store any private key material.
+// =============================================================================
+
+model UserRecipient {
+  id         String        @id @default(cuid())
+  userId     String
+  recipient  String        // "age1..." or "ssh-ed25519 AAAA..."
+  kind       RecipientKind
+  label      String        // user-facing — "MacBook Pro Keychain", "YubiKey blue"
+  createdAt  DateTime      @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipient])
+  @@index([userId])
+}
+
+enum RecipientKind {
+  AGE_X25519
+  SSH_ED25519
+  SSH_RSA
+}
+
+// =============================================================================
+// Workspaces — the billing unit
+// =============================================================================
+
+model Workspace {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  description String?
+  type        WorkspaceType @default(TEAM)
+  ownerId     String
+
+  // Soft delete + per-workspace retention setting for nested soft-deletes
+  deletedAt               DateTime?
+  softDeleteRetentionDays Int       @default(30)
+
+  owner        User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members      WorkspaceMember[]
+  invites      Invite[]
+  projects     Project[]
+  subscription Subscription?
+  auditLogs    AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+enum WorkspaceType {
+  PERSONAL
+  TEAM
+}
+
+model WorkspaceMember {
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Invite {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  email           String
+  role            WorkspaceRole @default(MEMBER)
+  tokenHash       String        @unique
+  invitedByUserId String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InvitedBy", fields: [invitedByUserId], references: [id])
+
+  @@index([workspaceId, acceptedAt])
+  @@index([email])
+}
+
+// =============================================================================
+// Projects → Environments → Versions
+// =============================================================================
+
+model Project {
+  id          String    @id @default(cuid())
+  workspaceId String
+  slug        String
+  name        String
+  description String?
+  deletedAt   DateTime?
+  // Single durable setup code shown on the project page. Anyone with workspace
+  // membership can redeem it with `envstore link <CODE>` to get envstore.json.
+  // Nullable only so legacy rows can be lazy-filled on first read.
+  linkCode    String?   @unique
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  environments Environment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, deletedAt])
+}
+
+model Environment {
+  id        String    @id @default(cuid())
+  projectId String
+  slug      String
+  name      String
+  deletedAt DateTime?
+
+  // Rollback pointer — moving this is the "make current" operation.
+  // SetNull so versions can be hard-deleted without breaking the env row.
+  currentVersionId String? @unique
+
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  currentVersion EnvFileVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions       EnvFileVersion[] @relation("EnvVersions")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, slug])
+  @@index([projectId, deletedAt])
+}
+
+model EnvFileVersion {
+  id            String @id @default(cuid())
+  environmentId String
+  version       Int
+
+  r2Key            String
+  ciphertextSize   Int
+  ciphertextSha256 Bytes
+  recipientsHash   Bytes // hash of sorted recipient set this was encrypted to
+
+  comment         String?
+  createdByUserId String
+
+  createdAt DateTime @default(now())
+
+  environment   Environment  @relation("EnvVersions", fields: [environmentId], references: [id], onDelete: Cascade)
+  currentForEnv Environment? @relation("CurrentVersion")
+  createdBy     User         @relation(fields: [createdByUserId], references: [id])
+
+  @@unique([environmentId, version])
+  @@index([environmentId, createdAt])
+}
+
+// =============================================================================
+// CLI auth
+// =============================================================================
+
+model CliToken {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  tokenHash  String    @unique // sha256(token) — token is shown to user once on creation
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// OAuth 2.0 device-authorization grant (RFC 8628).
+// The CLI hits /api/cli/device/start, gets a deviceCode + userCode, then opens
+// the user's browser to /cli/<userCode> for approval while polling
+// /api/cli/device/poll with the deviceCode. On approval we mint a CliToken and
+// return it on the next poll.
+//
+// deviceCodeHash is sha256(deviceCode) — the raw deviceCode is only ever held
+// in the CLI's memory and over TLS. userCode is the short human-typeable code
+// that lives in the browser URL (lower entropy, but expires fast).
+model DeviceAuthorization {
+  id              String                    @id @default(cuid())
+  deviceCodeHash  String                    @unique
+  userCode        String                    @unique
+  clientName      String?
+  ipAddress       String?
+  status          DeviceAuthorizationStatus @default(PENDING)
+  expiresAt       DateTime
+  pollIntervalSec Int                       @default(5)
+  lastPolledAt    DateTime?
+  pollAttempts    Int                       @default(0)
+
+  approvedByUserId String?
+  approvedAt       DateTime?
+  cliTokenId       String? // populated when status = APPROVED
+
+  createdAt DateTime @default(now())
+
+  approvedBy User? @relation(fields: [approvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt])
+  @@index([status, expiresAt])
+}
+
+enum DeviceAuthorizationStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  CONSUMED // token has been delivered to the CLI; cannot be re-fetched
+}
+
+// =============================================================================
+// Audit log
+// =============================================================================
+
+model AuditLog {
+  id           String  @id @default(cuid())
+  workspaceId  String?
+  userId       String?
+  action       String
+  resourceType String?
+  resourceId   String?
+  ipAddress    String?
+  userAgent    String? @db.Text
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// =============================================================================
+// Billing — one subscription per workspace, including personal
+// =============================================================================
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  workspaceId          String             @unique
+  paddleSubscriptionId String?            @unique
+  paddlePriceId        String?
+  status               SubscriptionStatus @default(TRIALING)
+  trialEndsAt          DateTime?
+  currentPeriodEnd     DateTime?
+  canceledAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELED
+}

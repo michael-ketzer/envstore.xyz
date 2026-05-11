@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Env files (committed: only .env.example)
+.env
+.env.local
+.env.*.local
+.envstore
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+*.swp
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Coverage / test artifacts
+coverage/
+.nyc_output/
+
+# Caches
+.cache/
+
+# Prisma generated client (we keep generated/ out of git)
+**/prisma/.client/
+**/prisma/generated/
+
+# CLI binaries
+apps/cli/bin/

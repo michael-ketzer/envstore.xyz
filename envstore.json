@@ -1,0 +1,6 @@
+{
+  "$schema": "http://localhost:3000/schema/envstore.json",
+  "version": 1,
+  "workspace": "mail",
+  "project": "envstore"
+}

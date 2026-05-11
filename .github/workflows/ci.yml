@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel in-flight runs for the same branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Stubs sufficient to satisfy schema validation in env.ts. No real
+  # connection ever happens during typecheck / build / lint.
+  DATABASE_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=require"
+  DIRECT_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=require"
+  AUTH_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+  PADDLE_ENV: "sandbox"
+
+jobs:
+  check:
+    name: typecheck + lint + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build web (production)
+        run: pnpm --filter @envstore/web build
+
+      - name: Compile CLI binary
+        run: pnpm --filter @envstore/cli build

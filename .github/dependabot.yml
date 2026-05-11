@@ -1,0 +1,31 @@
+version: 2
+
+updates:
+  # npm (pnpm) — checks every workspace package.json
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      # Avoid PR floods — bundle non-major bumps into a single PR per ecosystem.
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # next-auth's beta tag moves often; pin manually.
+      - dependency-name: next-auth
+
+  # GitHub Actions used by .github/workflows/*
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    labels: [dependencies, ci]

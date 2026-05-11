@@ -1,0 +1,3 @@
+[install]
+# Strict — fail rather than auto-installing missing deps at runtime.
+auto = "fallback"

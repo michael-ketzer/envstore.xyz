@@ -1,0 +1,31 @@
+{
+  "name": "@envstore/cli",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "bin": {
+    "envstore": "./bin/envstore"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile bin/envstore --minify",
+    "build:darwin-arm64": "bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile bin/envstore-darwin-arm64 --minify",
+    "build:darwin-x64": "bun build src/index.ts --compile --target=bun-darwin-x64 --outfile bin/envstore-darwin-x64 --minify",
+    "build:linux-arm64": "bun build src/index.ts --compile --target=bun-linux-arm64 --outfile bin/envstore-linux-arm64 --minify",
+    "build:linux-x64": "bun build src/index.ts --compile --target=bun-linux-x64 --outfile bin/envstore-linux-x64 --minify",
+    "build:all": "pnpm run build:darwin-arm64 && pnpm run build:darwin-x64 && pnpm run build:linux-arm64 && pnpm run build:linux-x64",
+    "typecheck": "tsc --noEmit",
+    "topo": "echo 'cli topo ok'"
+  },
+  "dependencies": {
+    "@envstore/crypto": "workspace:*",
+    "@envstore/shared": "workspace:*",
+    "age-encryption": "^0.2.3"
+  },
+  "devDependencies": {
+    "@envstore/config": "workspace:*",
+    "@types/bun": "^1.1.14",
+    "typescript": "^5.7.0"
+  }
+}

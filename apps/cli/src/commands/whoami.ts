@@ -1,0 +1,52 @@
+// `envstore whoami` — confirms the token works and prints user + workspace summary.
+
+import { makeClient } from '../lib/api';
+import type { Args } from '../lib/args';
+import { resolveApiUrl, findProjectConfig } from '../lib/config';
+import { loadIdentity } from '../lib/identity';
+import type { MeResponse } from '../lib/me';
+import { c, heading, info, muted } from '../lib/output';
+
+export async function whoami(_args: Args): Promise<void> {
+  const project = await findProjectConfig();
+  const apiUrl = await resolveApiUrl({ project: project?.config ?? null });
+  const client = makeClient(apiUrl);
+  const me = await client.get<MeResponse>('/api/v1/me');
+  const identity = await loadIdentity();
+
+  heading(me.user.name ?? me.user.email);
+  muted(`  ${me.user.email}`);
+  muted(`  API: ${apiUrl}`);
+  console.log();
+
+  if (identity) {
+    heading('Identity');
+    console.log(`  ${c.gray('public key:')} ${identity.recipient}`);
+    console.log(`  ${c.gray('stored in: ')} ${identity.source}`);
+    console.log();
+  } else {
+    muted('No local identity yet. Run `envstore identity init` to create one.');
+    console.log();
+  }
+
+  if (me.workspaces.length > 0) {
+    heading('Workspaces');
+    for (const ws of me.workspaces) {
+      const type = c.gray(`(${ws.type.toLowerCase()})`);
+      const role = c.gray(`[${ws.role.toLowerCase()}]`);
+      console.log(`  ${c.cyan(ws.slug)} ${ws.name} ${type} ${role}`);
+    }
+    console.log();
+  }
+
+  if (project) {
+    heading('Linked project');
+    console.log(`  ${project.config.workspace}/${project.config.project}`);
+    console.log(`  ${c.gray('config:')} ${project.path}`);
+  } else {
+    muted('No envstore.json found in cwd or parents.');
+    muted('Run `envstore link` or `envstore init` here to connect this directory.');
+  }
+
+  info('');
+}

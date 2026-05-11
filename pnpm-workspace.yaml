@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Build scripts to allow on install. pnpm requires explicit opt-in.
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  sharp: true

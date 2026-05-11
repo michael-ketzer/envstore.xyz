@@ -1,0 +1,4 @@
+@import '@envstore/ui/styles/globals.css';
+
+/* Scan the shared UI package for class usage. */
+@source '../../../../packages/ui/src';

@@ -3,7 +3,7 @@
 import { useActionState, useState } from 'react';
 
 import { Button, Input, Label } from '@envstore/ui';
-import { LIMITS, slugify } from '@envstore/shared';
+import { LIMITS } from '@envstore/shared';
 
 import { updateProjectAction, type ProjectSettingsState } from './actions';
 
@@ -28,10 +28,7 @@ export function ProjectSettingsForm({
   const boundAction = updateProjectAction.bind(null, workspaceSlug, projectSlug);
   const [state, action, pending] = useActionState(boundAction, initial);
   const [groupChoice, setGroupChoice] = useState<string>(defaultGroupSlug ?? '');
-  const [newGroupSlug, setNewGroupSlug] = useState<string>('');
-
-  const submittedGroup =
-    groupChoice === NEW_GROUP_SENTINEL ? newGroupSlug.trim() : groupChoice;
+  const [newGroupName, setNewGroupName] = useState<string>('');
 
   return (
     <form action={action} className="space-y-6">
@@ -65,23 +62,21 @@ export function ProjectSettingsForm({
           <option value="">— No group (standalone) —</option>
           {groups.map((g) => (
             <option key={g.slug} value={g.slug}>
-              {g.name} ({g.slug})
+              {g.name}
             </option>
           ))}
           <option value={NEW_GROUP_SENTINEL}>+ Create new group…</option>
         </select>
         {groupChoice === NEW_GROUP_SENTINEL ? (
           <Input
-            name="new-group-slug"
-            value={newGroupSlug}
-            onChange={(e) => setNewGroupSlug(slugify(e.target.value))}
-            placeholder="my-monorepo"
-            minLength={LIMITS.slugMin}
-            maxLength={LIMITS.slugMax}
-            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+            name="new-group-name"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            placeholder="My Monorepo"
+            maxLength={LIMITS.nameMax}
           />
         ) : null}
-        <input type="hidden" name="group" value={submittedGroup} />
+        <input type="hidden" name="group" value={groupChoice} />
         <p className="text-xs text-muted-foreground">
           Move this project into a group, or pick "No group" to keep it standalone.
         </p>

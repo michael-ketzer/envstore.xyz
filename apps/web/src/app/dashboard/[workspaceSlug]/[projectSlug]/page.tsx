@@ -35,6 +35,7 @@ export default async function ProjectPage({
   const [project, recipientCount] = await Promise.all([
     getProjectForUser(workspaceSlug, projectSlug, session.user.id, {
       workspace: { select: { slug: true, name: true } },
+      group: { select: { slug: true, name: true } },
       environments: {
         where: { deletedAt: null },
         orderBy: { createdAt: 'asc' },
@@ -76,10 +77,21 @@ export default async function ProjectPage({
           </Link>
           <span className="px-1">/</span>
           <Link href={`/dashboard/${workspaceSlug}`} className="hover:text-foreground">
-            {workspaceSlug}
+            {project.workspace.name}
           </Link>
+          {project.group ? (
+            <>
+              <span className="px-1">/</span>
+              <Link
+                href={`/dashboard/${workspaceSlug}/groups/${project.group.slug}`}
+                className="hover:text-foreground"
+              >
+                {project.group.name}
+              </Link>
+            </>
+          ) : null}
           <span className="px-1">/</span>
-          <span className="font-mono text-foreground">{project.slug}</span>
+          <span className="text-foreground">{project.name}</span>
         </nav>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
           <div>

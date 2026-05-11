@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { Folder } from 'lucide-react';
+
 import { buttonVariants } from '@envstore/ui';
 import { defaultFilenameForEnvironment } from '@envstore/shared';
 
@@ -25,6 +27,7 @@ export default async function GroupPage({
   const session = await requireSession();
   const { workspaceSlug, groupSlug } = await params;
   const group = await getProjectGroupForUser(workspaceSlug, groupSlug, session.user.id, {
+    workspace: { select: { name: true } },
     projects: {
       where: { deletedAt: null },
       orderBy: { createdAt: 'asc' },
@@ -49,20 +52,17 @@ export default async function GroupPage({
           </Link>
           <span className="px-1">/</span>
           <Link href={`/dashboard/${workspaceSlug}`} className="hover:text-foreground">
-            {workspaceSlug}
+            {group.workspace.name}
           </Link>
           <span className="px-1">/</span>
-          <span className="text-muted-foreground">groups</span>
-          <span className="px-1">/</span>
-          <span className="font-mono text-foreground">{group.slug}</span>
+          <span className="text-foreground">{group.name}</span>
         </nav>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <span aria-hidden className="text-2xl text-muted-foreground">📁</span>
+              <Folder aria-hidden className="h-7 w-7 text-muted-foreground" />
               <h1 className="text-3xl font-semibold tracking-tight">{group.name}</h1>
             </div>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">{group.slug}</p>
             {group.description ? (
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{group.description}</p>
             ) : null}
@@ -108,12 +108,9 @@ export default async function GroupPage({
               >
                 <Link
                   href={`/dashboard/${workspaceSlug}/${p.slug}`}
-                  className="flex items-baseline justify-between border-b border-border px-5 py-3 hover:bg-muted/30"
+                  className="flex items-center justify-between border-b border-border px-5 py-3 hover:bg-muted/30"
                 >
-                  <div>
-                    <div className="font-medium">{p.name}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
-                  </div>
+                  <div className="font-medium">{p.name}</div>
                   <div className="text-xs text-muted-foreground">
                     {p._count.environments}{' '}
                     {p._count.environments === 1 ? 'environment' : 'environments'} →

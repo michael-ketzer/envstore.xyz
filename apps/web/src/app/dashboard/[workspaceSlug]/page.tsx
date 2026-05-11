@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { ChevronRight, Folder } from 'lucide-react';
+
 import { buttonVariants } from '@envstore/ui';
 import { PERSONAL_WORKSPACE_URL_SLUG } from '@envstore/shared';
 
@@ -237,28 +239,35 @@ function GroupCard({
   group: GroupListItem;
   projects: ProjectListItem[];
 }) {
+  // <details> handles open/close natively (no React state needed). The chevron
+  // rotates 90° via the group-open: variant; the rest of the row keeps its
+  // layout regardless of state.
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
-      <div className="flex items-start justify-between gap-4 border-b border-border bg-muted/40 px-5 py-3">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <span aria-hidden className="text-muted-foreground">📁</span>
-            <Link
-              href={`/dashboard/${workspaceSlug}/groups/${group.slug}`}
-              className="text-base font-semibold hover:underline"
-            >
-              {group.name}
-            </Link>
-            <span className="font-mono text-xs text-muted-foreground">{group.slug}</span>
-          </div>
+    <details
+      open
+      className="group/details overflow-hidden rounded-lg border border-border bg-muted/20"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-3 border-b border-border bg-muted/40 px-5 py-3 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden
+          className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open/details:rotate-90"
+        />
+        <Folder aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/dashboard/${workspaceSlug}/groups/${group.slug}`}
+            className="text-base font-semibold hover:underline"
+          >
+            {group.name}
+          </Link>
           {group.description ? (
-            <p className="mt-1 truncate text-xs text-muted-foreground">{group.description}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{group.description}</p>
           ) : null}
         </div>
         <span className="shrink-0 text-xs text-muted-foreground">
           {group.projectCount} {group.projectCount === 1 ? 'project' : 'projects'}
         </span>
-      </div>
+      </summary>
       {projects.length > 0 ? (
         <ul className="divide-y divide-border bg-background">
           {projects.map((p) => (
@@ -267,10 +276,7 @@ function GroupCard({
                 href={`/dashboard/${workspaceSlug}/${p.slug}`}
                 className="flex items-center justify-between px-5 py-3 hover:bg-muted/30"
               >
-                <div className="min-w-0">
-                  <div className="font-medium">{p.name}</div>
-                  <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
-                </div>
+                <div className="min-w-0 font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">
                   {p.environmentCount}{' '}
                   {p.environmentCount === 1 ? 'environment' : 'environments'}
@@ -290,7 +296,7 @@ function GroupCard({
           </Link>
         </div>
       )}
-    </div>
+    </details>
   );
 }
 
@@ -309,10 +315,7 @@ function ProjectList({
             href={`/dashboard/${workspaceSlug}/${p.slug}`}
             className="flex items-center justify-between px-5 py-4 hover:bg-muted/30"
           >
-            <div>
-              <div className="font-medium">{p.name}</div>
-              <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
-            </div>
+            <div className="font-medium">{p.name}</div>
             <div className="text-xs text-muted-foreground">
               {p.environmentCount}{' '}
               {p.environmentCount === 1 ? 'environment' : 'environments'}

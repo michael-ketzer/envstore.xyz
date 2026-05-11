@@ -44,14 +44,14 @@ export default async function GroupSettingsPage({
       <header>
         <nav className="text-xs text-muted-foreground">
           <Link href={`/dashboard/${workspaceSlug}`} className="hover:text-foreground">
-            {workspaceSlug}
+            {group.workspace.name}
           </Link>
           <span className="px-1">/</span>
           <Link
             href={`/dashboard/${workspaceSlug}/groups/${groupSlug}`}
             className="hover:text-foreground"
           >
-            {groupSlug}
+            {group.name}
           </Link>
           <span className="px-1">/</span>
           <span className="text-foreground">settings</span>

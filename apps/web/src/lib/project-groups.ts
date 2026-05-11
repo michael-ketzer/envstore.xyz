@@ -1,12 +1,28 @@
 import 'server-only';
+import { randomBytes } from 'node:crypto';
 
 import { prisma, type Prisma } from '@envstore/db';
 import {
+  LIMITS,
   PERSONAL_WORKSPACE_URL_SLUG,
+  slugify,
   validateSlug,
   type ProjectGroupCreateInput,
   type ProjectGroupUpdateInput,
 } from '@envstore/shared';
+
+async function pickUniqueGroupSlug(workspaceId: string, name: string): Promise<string> {
+  const base = slugify(name) || 'group';
+  for (let i = 0; i < 8; i++) {
+    const suffix = randomBytes(2).toString('hex');
+    const candidate = `${base}-${suffix}`.slice(0, LIMITS.slugMax);
+    const clash = await prisma.projectGroup.findUnique({
+      where: { workspaceId_slug: { workspaceId, slug: candidate } },
+    });
+    if (!clash) return candidate;
+  }
+  throw new Error('Failed to allocate a unique project-group slug.');
+}
 
 export type CreateProjectGroupResult =
   | { ok: true; group: { id: string; slug: string } }
@@ -16,31 +32,38 @@ export async function createProjectGroup(
   workspaceId: string,
   input: ProjectGroupCreateInput,
 ): Promise<CreateProjectGroupResult> {
-  const slugCheck = validateSlug(input.slug);
-  if (!slugCheck.ok) return { ok: false, reason: 'invalid-slug', message: slugCheck.reason };
-
-  const existing = await prisma.projectGroup.findUnique({
-    where: { workspaceId_slug: { workspaceId, slug: input.slug } },
-  });
-  if (existing && !existing.deletedAt) {
-    return {
-      ok: false,
-      reason: 'slug-taken',
-      message: 'A group with that slug already exists in this workspace.',
-    };
-  }
-  if (existing) {
-    return {
-      ok: false,
-      reason: 'slug-taken',
-      message: 'A deleted group still holds this slug — use a different one or purge it first.',
-    };
+  // Same dual-mode as createProject: explicit slug → respect + check uniqueness;
+  // omitted slug → auto-generate `<slugify(name)>-<random>`.
+  let slug: string;
+  if (input.slug) {
+    const slugCheck = validateSlug(input.slug);
+    if (!slugCheck.ok) return { ok: false, reason: 'invalid-slug', message: slugCheck.reason };
+    const existing = await prisma.projectGroup.findUnique({
+      where: { workspaceId_slug: { workspaceId, slug: input.slug } },
+    });
+    if (existing && !existing.deletedAt) {
+      return {
+        ok: false,
+        reason: 'slug-taken',
+        message: 'A group with that slug already exists in this workspace.',
+      };
+    }
+    if (existing) {
+      return {
+        ok: false,
+        reason: 'slug-taken',
+        message: 'A deleted group still holds this slug — use a different one or purge it first.',
+      };
+    }
+    slug = input.slug;
+  } else {
+    slug = await pickUniqueGroupSlug(workspaceId, input.name);
   }
 
   const group = await prisma.projectGroup.create({
     data: {
       workspaceId,
-      slug: input.slug,
+      slug,
       name: input.name,
       description: input.description,
     },

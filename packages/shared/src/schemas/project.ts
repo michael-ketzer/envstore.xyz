@@ -10,7 +10,9 @@ export const projectSlugSchema = z
   .regex(SLUG_REGEX, 'Invalid slug format');
 
 export const projectCreateSchema = z.object({
-  slug: projectSlugSchema,
+  // Optional. Omit it and the server generates `<slugify(name)>-<random>`;
+  // the CLI still passes one explicitly for the monorepo init flow.
+  slug: projectSlugSchema.optional(),
   name: z.string().min(1).max(LIMITS.nameMax).trim(),
   description: z.string().max(LIMITS.descriptionMax).optional(),
   // Slug of the ProjectGroup to attach to. The server creates the group

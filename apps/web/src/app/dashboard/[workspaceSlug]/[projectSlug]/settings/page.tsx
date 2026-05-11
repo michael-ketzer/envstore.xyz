@@ -48,14 +48,14 @@ export default async function ProjectSettingsPage({
       <header>
         <nav className="text-xs text-muted-foreground">
           <Link href={`/dashboard/${workspaceSlug}`} className="hover:text-foreground">
-            {workspaceSlug}
+            {project.workspace.name}
           </Link>
           <span className="px-1">/</span>
           <Link
             href={`/dashboard/${workspaceSlug}/${projectSlug}`}
             className="hover:text-foreground"
           >
-            {projectSlug}
+            {project.name}
           </Link>
           <span className="px-1">/</span>
           <span className="text-foreground">settings</span>

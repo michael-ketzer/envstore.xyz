@@ -8,10 +8,13 @@ import { projectUpdateSchema } from '@envstore/shared';
 
 import { recordAudit } from '@/lib/audit';
 import { requireSession } from '@/lib/auth-helpers';
+import { createProjectGroup } from '@/lib/project-groups';
 import { applyProjectGroupChange, getProjectForUser } from '@/lib/projects';
 import { getWorkspaceMembershipWithRole } from '@/lib/workspace-roles';
 
 export type ProjectSettingsState = { ok: boolean; error: string | null };
+
+const NEW_GROUP_SENTINEL = '__new__';
 
 export async function updateProjectAction(
   workspaceSlug: string,
@@ -27,16 +30,24 @@ export async function updateProjectAction(
   if (!project) return { ok: false, error: 'Project not found.' };
 
   // The group field is a tri-state: missing key → no change, empty string →
-  // unassign (null), non-empty slug → move into / create that group.
+  // unassign (null), non-empty slug → move into that group. The sentinel
+  // `__new__` plus a `new-group-name` field means "create a group from this
+  // name (server picks the slug), then move into it".
   const rawGroup = formData.get('group');
-  const groupInput =
-    rawGroup === null
-      ? undefined
-      : typeof rawGroup === 'string'
-        ? rawGroup.trim() === ''
-          ? null
-          : rawGroup.trim()
-        : undefined;
+  let groupInput: string | null | undefined;
+  if (typeof rawGroup !== 'string') {
+    groupInput = undefined;
+  } else if (rawGroup === '') {
+    groupInput = null;
+  } else if (rawGroup === NEW_GROUP_SENTINEL) {
+    const newGroupName = (formData.get('new-group-name') as string | null)?.trim();
+    if (!newGroupName) return { ok: false, error: 'New group name is required.' };
+    const groupResult = await createProjectGroup(membership.workspaceId, { name: newGroupName });
+    if (!groupResult.ok) return { ok: false, error: groupResult.message };
+    groupInput = groupResult.group.slug;
+  } else {
+    groupInput = rawGroup.trim() || null;
+  }
 
   const parsed = projectUpdateSchema.safeParse({
     name: (formData.get('name') as string)?.trim() || undefined,

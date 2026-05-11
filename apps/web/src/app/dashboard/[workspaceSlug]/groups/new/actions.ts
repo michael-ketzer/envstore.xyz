@@ -21,7 +21,7 @@ export async function createGroupAction(
   if (!ws) return { error: 'Workspace not found.' };
 
   const parsed = projectGroupCreateSchema.safeParse({
-    slug: formData.get('slug'),
+    // Slug is auto-generated from the name on the server.
     name: formData.get('name'),
     description: (formData.get('description') as string)?.trim() || undefined,
   });

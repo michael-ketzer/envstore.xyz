@@ -9,7 +9,8 @@ export const projectGroupSlugSchema = z
   .regex(SLUG_REGEX, 'Invalid slug format');
 
 export const projectGroupCreateSchema = z.object({
-  slug: projectGroupSlugSchema,
+  // Optional. Server generates `<slugify(name)>-<random>` when omitted.
+  slug: projectGroupSlugSchema.optional(),
   name: z.string().min(1).max(LIMITS.nameMax).trim(),
   description: z.string().max(LIMITS.descriptionMax).optional(),
 });

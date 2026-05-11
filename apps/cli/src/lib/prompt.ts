@@ -12,7 +12,9 @@ export function askText(
   opts?: { default?: string; required?: boolean; validate?: (v: string) => string | null },
 ): string {
   for (;;) {
-    const display = opts?.default ? `${question} ${c.gray(`(${opts.default})`)}` : question;
+    const display = opts?.default
+      ? `${c.bold(question)} ${c.gray(`(${opts.default})`)}`
+      : c.bold(question);
     const raw = prompt(`${display} `) ?? '';
     const value = raw.trim() || opts?.default || '';
     if (!value && opts?.required) {
@@ -30,7 +32,10 @@ export function askText(
 
 export function askConfirm(question: string, defaultYes = false): boolean {
   const tail = defaultYes ? c.gray('[Y/n]') : c.gray('[y/N]');
-  const raw = prompt(`${question} ${tail} `) ?? '';
+  // Bun's `prompt()` writes its argument to stderr in a default dim style,
+  // which makes plain text wash out against bolded picker headers. Bolding
+  // the question keeps the action point readable.
+  const raw = prompt(`${c.bold(question)} ${tail} `) ?? '';
   const v = raw.trim().toLowerCase();
   if (!v) return defaultYes;
   return v === 'y' || v === 'yes';

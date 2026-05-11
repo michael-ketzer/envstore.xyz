@@ -187,3 +187,35 @@ async function readPackageName(dir: string): Promise<string | null> {
     return null;
   }
 }
+
+// Suggest an environment slug for `relPath` when multiple .env files all share
+// one project (e.g. a monorepo where the whole repo is one product). The
+// returned slug is a hint — the user can override at the prompt.
+//
+//   .env                          → "root"
+//   .env.production               → "production"
+//   apps/web/.env                 → "web"
+//   apps/web/.env.local           → "web"   (`.local` isn't a real env qualifier)
+//   apps/web/.env.production      → "web-production"
+//   packages/database/.env        → "database"
+export function suggestEnvSlugForFile(relPath: string): string {
+  const parts = relPath.split('/');
+  const filename = parts[parts.length - 1]!;
+  const dir = parts.slice(0, -1).join('/');
+
+  // Extract everything after `.env.`, if present.
+  let qualifier: string | null = null;
+  if (filename.startsWith('.env.')) {
+    const q = filename.slice('.env.'.length);
+    // `.local` is the "this is my private override" suffix, not a real env.
+    if (q && q !== 'local') qualifier = q;
+  }
+
+  // Workspace-dir basename if the file lives in one (apps/web → "web").
+  const dirSlug = dir ? parts[parts.length - 2]! : null;
+
+  if (dirSlug && qualifier) return `${dirSlug}-${qualifier}`;
+  if (dirSlug) return dirSlug;
+  if (qualifier) return qualifier;
+  return 'root';
+}

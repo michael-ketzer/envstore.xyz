@@ -87,29 +87,6 @@ export async function createTeamWorkspace(
   return { ok: true, workspace };
 }
 
-export type RenameSlugResult =
-  | { ok: true; slug: string }
-  | { ok: false; reason: 'slug-taken' | 'invalid-slug' | 'same'; message: string };
-
-export async function renameWorkspaceSlug(
-  workspaceId: string,
-  newSlug: string,
-): Promise<RenameSlugResult> {
-  const slugCheck = validateWorkspaceSlug(newSlug);
-  if (!slugCheck.ok) return { ok: false, reason: 'invalid-slug', message: slugCheck.reason };
-  const current = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { slug: true },
-  });
-  if (current?.slug === newSlug) {
-    return { ok: false, reason: 'same', message: 'New slug matches the current one.' };
-  }
-  const clash = await prisma.workspace.findUnique({ where: { slug: newSlug } });
-  if (clash) return { ok: false, reason: 'slug-taken', message: 'That slug is already taken.' };
-  await prisma.workspace.update({ where: { id: workspaceId }, data: { slug: newSlug } });
-  return { ok: true, slug: newSlug };
-}
-
 // Look up a workspace by slug, returning it only if the user is a member.
 // The literal "me" resolves to the signed-in user's personal workspace,
 // regardless of its stored slug.

@@ -21,15 +21,8 @@ export const workspaceUpdateSchema = z.object({
   softDeleteRetentionDays: z.number().int().min(0).max(365).optional(),
 });
 
-// Slug rename is its own schema — different role gate (OWNER only) and side
-// effects (URLs change, envstore.json files referencing the old slug break).
-export const workspaceRenameSlugSchema = z.object({
-  slug: workspaceSlugSchema,
-});
-
 export type WorkspaceCreateInput = z.infer<typeof workspaceCreateSchema>;
 export type WorkspaceUpdateInput = z.infer<typeof workspaceUpdateSchema>;
-export type WorkspaceRenameSlugInput = z.infer<typeof workspaceRenameSlugSchema>;
 
 // ---- API responses (CLI consumers) ----
 

@@ -8,7 +8,6 @@ import { requireSession } from '@/lib/auth-helpers';
 import { getWorkspaceForUser } from '@/lib/workspaces';
 import { hasAtLeastRole } from '@/lib/workspace-roles';
 import { DangerZone } from './danger-zone';
-import { RenameSlugForm } from './rename-slug-form';
 import { WorkspaceSettingsForm } from './workspace-settings-form';
 
 export async function generateMetadata({
@@ -22,14 +21,11 @@ export async function generateMetadata({
 
 export default async function WorkspaceSettingsPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ workspaceSlug: string }>;
-  searchParams: Promise<{ renamed?: string }>;
 }) {
   const session = await requireSession();
   const { workspaceSlug } = await params;
-  const { renamed } = await searchParams;
   const ws = await getWorkspaceForUser(workspaceSlug, session.user.id, {
     members: { where: { userId: session.user.id }, select: { role: true } },
   });
@@ -39,9 +35,6 @@ export default async function WorkspaceSettingsPage({
   const isPersonal = ws.type === 'PERSONAL';
   const myRole = ws.members[0]?.role as WorkspaceRole | undefined;
   const canEdit = myRole !== undefined && hasAtLeastRole(myRole, 'ADMIN');
-  // Slug rename for personal workspaces is hidden — there's no point, since
-  // personal workspaces are always addressed by /me anyway.
-  const canRename = myRole === 'OWNER' && !isPersonal;
   const canDelete = myRole === 'OWNER' && !isPersonal;
 
   return (
@@ -56,14 +49,6 @@ export default async function WorkspaceSettingsPage({
         </nav>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Workspace settings</h1>
       </header>
-
-      {renamed === '1' ? (
-        <div className="rounded-md border border-border bg-muted/30 p-4 text-sm">
-          Slug updated. Existing <code className="font-mono">envstore.json</code> files referencing
-          the old slug need to be re-linked with{' '}
-          <code className="font-mono">envstore link {ws.slug}/&lt;project&gt;</code>.
-        </div>
-      ) : null}
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">General</h2>
@@ -81,25 +66,14 @@ export default async function WorkspaceSettingsPage({
         )}
       </section>
 
-      {canRename ? (
-        <section className="space-y-4">
-          <h2 className="text-lg font-semibold">URL slug</h2>
-          <p className="text-sm text-muted-foreground">
-            The slug shows up in URLs (<code className="font-mono">envstore.xyz/{ws.slug}</code>) and
-            in every <code className="font-mono">envstore.json</code> that targets this workspace.
-          </p>
-          <RenameSlugForm currentSlug={ws.slug} />
-        </section>
-      ) : null}
-
       {isPersonal ? (
         <section className="space-y-2 rounded-md border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
           <p className="font-medium text-foreground">Personal workspace.</p>
           <p>
             Always addressable at{' '}
-            <code className="font-mono">/dashboard/{PERSONAL_WORKSPACE_URL_SLUG}</code>. Members,
-            invites, and slug rename are not available — personal workspaces are private to you.
-            To collaborate, create a team workspace.
+            <code className="font-mono">/dashboard/{PERSONAL_WORKSPACE_URL_SLUG}</code>. Members
+            and invites are not available — personal workspaces are private to you. To
+            collaborate, create a team workspace.
           </p>
         </section>
       ) : null}

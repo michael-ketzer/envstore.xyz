@@ -12,6 +12,7 @@
 import 'server-only';
 
 import {
+  ApiError,
   Environment,
   Paddle,
   type EventEntity,
@@ -42,6 +43,11 @@ export function getPaddleClient(): Paddle | null {
 // Paddle Customer and persists the ID. We index Paddle customers by envstore
 // User (not Workspace) so the same payment method covers all workspaces the
 // user subscribes to.
+//
+// If a Paddle customer already exists for this email (e.g. left over from a
+// previous attempt where we didn't persist the ID, or carried over from an
+// earlier account), we adopt it instead of failing. Otherwise the user would
+// be permanently locked out of checkout.
 export async function ensurePaddleCustomer(user: {
   id: string;
   email: string;
@@ -53,18 +59,47 @@ export async function ensurePaddleCustomer(user: {
   const paddle = getPaddleClient();
   if (!paddle) throw new BillingNotConfiguredError();
 
-  const customer = await paddle.customers.create({
-    email: user.email,
-    name: user.name ?? undefined,
-    customData: { envstoreUserId: user.id },
-  });
+  let customerId: string;
+  try {
+    const customer = await paddle.customers.create({
+      email: user.email,
+      name: user.name ?? undefined,
+      customData: { envstoreUserId: user.id },
+    });
+    customerId = customer.id;
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'customer_already_exists') {
+      customerId = await findPaddleCustomerIdByEmail(paddle, user.email);
+    } else {
+      throw err;
+    }
+  }
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { paddleCustomerId: customer.id },
+    data: { paddleCustomerId: customerId },
   });
 
-  return customer.id;
+  return customerId;
+}
+
+// Looks up a Paddle Customer by email. Used to recover from the
+// `customer_already_exists` conflict in `ensurePaddleCustomer`.
+async function findPaddleCustomerIdByEmail(
+  paddle: Paddle,
+  email: string,
+): Promise<string> {
+  const collection = paddle.customers.list({ email: [email] });
+  for await (const customer of collection) {
+    if (customer.email.toLowerCase() === email.toLowerCase()) {
+      return customer.id;
+    }
+  }
+  // Paddle just told us there's a conflict — if list returns nothing the
+  // customer was archived. Surface a clear error instead of silently retrying.
+  throw new Error(
+    `Paddle reported a customer conflict for ${email} but no matching customer was found via list. The existing customer may be archived.`,
+  );
 }
 
 // Creates a Paddle Transaction for the team workspace plan. Returns the

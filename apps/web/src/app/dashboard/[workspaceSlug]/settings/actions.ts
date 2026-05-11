@@ -1,19 +1,14 @@
 'use server';
 
-import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { prisma } from '@envstore/db';
-import {
-  LIMITS,
-  workspaceRenameSlugSchema,
-  workspaceUpdateSchema,
-} from '@envstore/shared';
+import { LIMITS, workspaceUpdateSchema } from '@envstore/shared';
 
 import { recordAudit } from '@/lib/audit';
 import { requireSession } from '@/lib/auth-helpers';
-import { renameWorkspaceSlug } from '@/lib/workspaces';
 import { getWorkspaceMembershipWithRole } from '@/lib/workspace-roles';
 
 export type SettingsState = { error: string | null; ok: boolean };
@@ -68,49 +63,6 @@ export async function updateWorkspaceAction(
   revalidatePath(`/dashboard/${workspaceSlug}`);
   revalidatePath(`/dashboard/${workspaceSlug}/settings`);
   return { ok: true, error: null };
-}
-
-export async function renameWorkspaceSlugAction(
-  currentSlug: string,
-  _: SettingsState,
-  formData: FormData,
-): Promise<SettingsState> {
-  const session = await requireSession();
-  const membership = await getWorkspaceMembershipWithRole(currentSlug, session.user.id, 'OWNER');
-  if (!membership) {
-    return { ok: false, error: 'Only the owner can change the workspace slug.' };
-  }
-  if (membership.workspace.type === 'PERSONAL') {
-    return {
-      ok: false,
-      error: 'Personal workspaces use the fixed /me URL — no slug change needed.',
-    };
-  }
-
-  const parsed = workspaceRenameSlugSchema.safeParse({
-    slug: (formData.get('slug') as string)?.trim().toLowerCase() ?? '',
-  });
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid slug.' };
-  }
-  const confirm = (formData.get('confirm') as string)?.trim();
-  if (confirm !== currentSlug) {
-    return { ok: false, error: `Type "${currentSlug}" to confirm — this breaks links.` };
-  }
-
-  const result = await renameWorkspaceSlug(membership.workspaceId, parsed.data.slug);
-  if (!result.ok) {
-    return { ok: false, error: result.message };
-  }
-  await recordAudit({
-    workspaceId: membership.workspaceId,
-    userId: session.user.id,
-    action: 'workspace.update',
-    resourceType: 'workspace',
-    resourceId: membership.workspaceId,
-    metadata: { slugFrom: currentSlug, slugTo: result.slug },
-  });
-  redirect(`/dashboard/${result.slug}/settings?renamed=1`);
 }
 
 export async function softDeleteWorkspaceAction(

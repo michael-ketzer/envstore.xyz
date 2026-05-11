@@ -128,25 +128,7 @@ export default async function WorkspacePage({
             </Link>
           </div>
         ) : (
-          <ul className="mt-4 divide-y divide-border rounded-md border border-border">
-            {ws.projects.map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/dashboard/${urlSlug}/${p.slug}`}
-                  className="flex items-center justify-between px-5 py-4 hover:bg-muted/30"
-                >
-                  <div>
-                    <div className="font-medium">{p.name}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {p._count.environments}{' '}
-                    {p._count.environments === 1 ? 'environment' : 'environments'}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <ProjectListing workspaceSlug={urlSlug} projects={ws.projects} />
         )}
       </section>
 
@@ -156,6 +138,88 @@ export default async function WorkspacePage({
         </p>
       ) : null}
     </div>
+  );
+}
+
+type ProjectListItem = {
+  id: string;
+  slug: string;
+  name: string;
+  group: string | null;
+  _count: { environments: number };
+};
+
+function ProjectListing({
+  workspaceSlug,
+  projects,
+}: {
+  workspaceSlug: string;
+  projects: ProjectListItem[];
+}) {
+  // Split into ungrouped (rendered flat) and grouped (rendered as folders).
+  // Within each group, preserve the API ordering (creation order).
+  const ungrouped: ProjectListItem[] = [];
+  const groups = new Map<string, ProjectListItem[]>();
+  for (const p of projects) {
+    if (p.group) {
+      const bucket = groups.get(p.group) ?? [];
+      bucket.push(p);
+      groups.set(p.group, bucket);
+    } else {
+      ungrouped.push(p);
+    }
+  }
+  const groupNames = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b));
+
+  return (
+    <div className="mt-4 space-y-4">
+      {ungrouped.length > 0 ? (
+        <ProjectList workspaceSlug={workspaceSlug} items={ungrouped} />
+      ) : null}
+      {groupNames.map((name) => (
+        <div key={name} className="space-y-2">
+          <div className="flex items-baseline gap-2">
+            <span aria-hidden className="text-muted-foreground">📁</span>
+            <h3 className="text-sm font-semibold">{name}</h3>
+            <span className="text-xs text-muted-foreground">
+              {groups.get(name)!.length}{' '}
+              {groups.get(name)!.length === 1 ? 'project' : 'projects'}
+            </span>
+          </div>
+          <ProjectList workspaceSlug={workspaceSlug} items={groups.get(name)!} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProjectList({
+  workspaceSlug,
+  items,
+}: {
+  workspaceSlug: string;
+  items: ProjectListItem[];
+}) {
+  return (
+    <ul className="divide-y divide-border rounded-md border border-border">
+      {items.map((p) => (
+        <li key={p.id}>
+          <Link
+            href={`/dashboard/${workspaceSlug}/${p.slug}`}
+            className="flex items-center justify-between px-5 py-4 hover:bg-muted/30"
+          >
+            <div>
+              <div className="font-medium">{p.name}</div>
+              <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {p._count.environments}{' '}
+              {p._count.environments === 1 ? 'environment' : 'environments'}
+            </div>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

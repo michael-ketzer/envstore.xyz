@@ -46,6 +46,7 @@ export async function createProject(
       slug: input.slug,
       name: input.name,
       description: input.description,
+      group: input.group ?? null,
       // Stable setup code shown on the project page; surfaced by `envstore link <CODE>`.
       linkCode: await pickUniqueLinkCode(),
     },

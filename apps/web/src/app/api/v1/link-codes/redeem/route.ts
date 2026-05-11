@@ -56,5 +56,6 @@ export async function POST(req: Request) {
   return Response.json({
     workspace: result.workspace.slug,
     project: result.project.slug,
+    group: result.project.group,
   });
 }

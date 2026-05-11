@@ -14,7 +14,7 @@ import { CliError } from '../lib/errors';
 import { c, heading, muted } from '../lib/output';
 import type { MeResponse, MeWorkspace } from '../lib/me';
 
-type ProjectSummary = { slug: string; name: string };
+type ProjectSummary = { slug: string; name: string; group?: string | null };
 type EnvSummary = {
   slug: string;
   name: string;
@@ -112,8 +112,29 @@ function printProjects(workspaceSlug: string, list: ProjectSummary[]): void {
     return;
   }
   heading(`${workspaceSlug} / projects`);
+  // Bucket by group so the same monorepo's projects render together. Ungrouped
+  // projects come first (top level), grouped ones follow under a small header.
+  const ungrouped: ProjectSummary[] = [];
+  const groups = new Map<string, ProjectSummary[]>();
   for (const p of list) {
+    if (p.group) {
+      const bucket = groups.get(p.group) ?? [];
+      bucket.push(p);
+      groups.set(p.group, bucket);
+    } else {
+      ungrouped.push(p);
+    }
+  }
+  for (const p of ungrouped) {
     console.log(`  ${c.cyan(p.slug.padEnd(20))} ${p.name}`);
+  }
+  const groupNames = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b));
+  for (const name of groupNames) {
+    if (ungrouped.length > 0) console.log();
+    console.log(`  ${c.gray('📁')} ${c.bold(name)}`);
+    for (const p of groups.get(name)!) {
+      console.log(`     ${c.cyan(p.slug.padEnd(20))} ${p.name}`);
+    }
   }
 }
 

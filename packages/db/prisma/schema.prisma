@@ -199,6 +199,10 @@ model Project {
   // membership can redeem it with `envstore link <CODE>` to get envstore.json.
   // Nullable only so legacy rows can be lazy-filled on first read.
   linkCode    String?   @unique
+  // Optional folder name for grouping related projects (e.g. all apps of a
+  // single monorepo). Pure UX — no semantic enforcement. NULL means
+  // "ungrouped" and the dashboard renders the project at the top level.
+  group       String?
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   environments Environment[]
@@ -207,6 +211,7 @@ model Project {
   updatedAt DateTime @updatedAt
 
   @@unique([workspaceId, slug])
+  @@index([workspaceId, group])
   @@index([workspaceId, deletedAt])
 }
 

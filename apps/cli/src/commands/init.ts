@@ -37,13 +37,13 @@ import {
   detectMonorepoMarkers,
   hasAnyMonorepoMarker,
   scanEnvFiles,
-  suggestEnvSlugForFile,
+  suggestProjectSlugForFile,
 } from '../lib/monorepo';
 import { c, info, muted, success } from '../lib/output';
 import { askChoice, askConfirm, askText, requireTty } from '../lib/prompt';
 import type { MeResponse, MeWorkspace } from '../lib/me';
 
-type ProjectSummary = { slug: string; name: string };
+type ProjectSummary = { slug: string; name: string; group?: string | null };
 type ProjectSuggestion = { name: string; slug: string; source: string };
 
 export async function init(args: Args): Promise<void> {
@@ -122,12 +122,12 @@ export async function init(args: Args): Promise<void> {
 // Monorepo init flow
 // =============================================================================
 
-// Walks the user through registering every env file in a monorepo under a
-// single envstore project. Each file becomes its own environment within that
-// one project (e.g. .env→root, apps/web/.env.local→web). This matches the
-// "the monorepo is the deployable unit" mental model — one envstore project
-// per repo, environments per workspace dir. Returns true if it wrote a
-// config (user proceeded), false if they declined.
+// Walks the user through registering every env file in a monorepo. Each
+// .env file becomes its own envstore project (so `apps/web/.env.local`
+// becomes the `web` project, `apps/admin/.env` becomes `admin`, etc.) and
+// all projects are tagged with the same `group` so the dashboard renders
+// them inside a single folder named after the monorepo. Returns true if
+// it wrote a config (user proceeded), false if they declined.
 async function maybeInitMonorepo(opts: {
   client: ReturnType<typeof makeClient>;
   me: MeResponse;
@@ -143,11 +143,16 @@ async function maybeInitMonorepo(opts: {
   info(`Found ${envFiles.length} env files:`);
   for (const f of envFiles) console.log(`  ${c.gray(f)}`);
   console.log();
-  if (!askConfirm('Set them all up in one envstore project (each file → its own environment)?', true)) {
+  if (
+    !askConfirm(
+      'Set them all up (one project per file, grouped under a single folder)?',
+      true,
+    )
+  ) {
     return false;
   }
 
-  // Resolve workspace + project ONCE for all files.
+  // Resolve workspace once for all files.
   const workspace = await resolveWorkspace(
     client,
     me,
@@ -155,52 +160,51 @@ async function maybeInitMonorepo(opts: {
     args,
   );
 
-  const projects = await client.get<ProjectSummary[]>(
+  // Ask once for the group name that ties the projects together in the
+  // dashboard. Default: root package.json#name or repo dir basename.
+  const rootSuggestion = await suggestFromPackageJson(cwd);
+  const groupDefault = slugify(rootSuggestion?.slug ?? '') || 'monorepo';
+  console.log();
+  const group = askText('Group (folder) name for these projects', {
+    default: groupDefault,
+    required: true,
+    validate: (v) => {
+      const r = validateSlug(v);
+      return r.ok ? null : r.reason;
+    },
+  });
+
+  // Fetch existing projects once so we don't re-create slugs that already
+  // exist (e.g. user re-running --force).
+  let projects = await client.get<ProjectSummary[]>(
     `/api/v1/workspaces/${workspace.slug}/projects`,
   );
-  const suggestion = await suggestFromPackageJson(cwd);
-  const project = await resolveProject(
-    client,
-    workspace.slug,
-    projects,
-    stringFlag(args.flags['project']),
-    stringFlag(args.flags['name']),
-    suggestion,
-  );
 
-  // For each file, prompt for an environment slug. Suggestion comes from the
-  // file's location (apps/web/.env.local → "web", root .env → "root",
-  // .env.production → "production").
-  console.log();
-  info(c.gray('Pick an environment name for each file:'));
   const entries: EnvstoreFileEntry[] = [];
-  const usedSlugs = new Set<string>();
   for (const filePath of envFiles) {
-    const raw = suggestEnvSlugForFile(filePath);
-    let defaultSlug = slugify(raw) || 'root';
-    // Avoid collisions inside this single project — append a -N suffix if the
-    // suggested slug was already used by an earlier file.
-    if (usedSlugs.has(defaultSlug)) {
-      let i = 2;
-      while (usedSlugs.has(`${defaultSlug}-${i}`)) i++;
-      defaultSlug = `${defaultSlug}-${i}`;
-    }
+    const suggestion = slugify(await suggestProjectSlugForFile(cwd, filePath));
     console.log();
     info(`${c.cyan(filePath)}`);
-    const envSlug = askText('  Environment slug', {
-      default: defaultSlug,
+    const projectSlug = askText('  Project slug', {
+      default: suggestion || 'project',
       required: true,
       validate: (v) => {
         const r = validateSlug(v);
-        if (!r.ok) return r.reason;
-        if (usedSlugs.has(v)) {
-          return `"${v}" already used by another file in this config — pick a distinct slug.`;
-        }
-        return null;
+        return r.ok ? null : r.reason;
       },
     });
-    usedSlugs.add(envSlug);
-    entries.push({ path: filePath, project: project.slug, environment: envSlug });
+
+    if (!projects.some((p) => p.slug === projectSlug)) {
+      const created = await createProject(
+        client,
+        workspace.slug,
+        projectSlug,
+        projectSlug,
+        group,
+      );
+      projects = [...projects, created];
+    }
+    entries.push({ path: filePath, project: projectSlug });
   }
 
   // ----- Write the multi-config envstore.json -----
@@ -213,11 +217,10 @@ async function maybeInitMonorepo(opts: {
   await writeProjectConfig(target, content);
 
   console.log();
-  success(`Wrote ${ENVSTORE_CONFIG_FILENAME} (${entries.length} files → 1 project).`);
+  success(`Wrote ${ENVSTORE_CONFIG_FILENAME} (${entries.length} files, grouped as ${c.cyan(group)}).`);
   console.log(`  ${c.gray('workspace:')} ${c.cyan(workspace.slug)}`);
-  console.log(`  ${c.gray('project:  ')} ${c.cyan(project.slug)}`);
   for (const e of entries) {
-    console.log(`  ${c.cyan(e.path)} → ${c.gray(e.environment ?? '?')}`);
+    console.log(`  ${c.cyan(e.path)} → ${e.project}`);
   }
   console.log();
   muted('Commit this file. It contains no secrets — just routing info.');
@@ -382,10 +385,11 @@ async function createProject(
   workspaceSlug: string,
   slug: string,
   name: string,
+  group?: string,
 ): Promise<ProjectSummary> {
   const created = await client.post<ProjectSummary>(
     `/api/v1/workspaces/${workspaceSlug}/projects`,
-    { slug, name },
+    { slug, name, ...(group ? { group } : {}) },
   );
   success(`Created project ${workspaceSlug}/${created.slug}.`);
   return created;

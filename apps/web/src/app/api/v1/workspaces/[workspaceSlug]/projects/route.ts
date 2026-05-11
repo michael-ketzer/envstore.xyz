@@ -34,7 +34,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const projects = await prisma.project.findMany({
     where: { workspaceId: ws.id, deletedAt: null },
     orderBy: { createdAt: 'asc' },
-    select: { slug: true, name: true, description: true },
+    select: { slug: true, name: true, description: true, group: true },
   });
   return Response.json(projects);
 }
@@ -72,7 +72,12 @@ export async function POST(req: Request, ctx: Ctx) {
     metadata: { slug: result.project.slug, via: 'cli' },
   });
   return Response.json(
-    { slug: result.project.slug, name: parsed.data.name, description: parsed.data.description ?? null },
+    {
+      slug: result.project.slug,
+      name: parsed.data.name,
+      description: parsed.data.description ?? null,
+      group: parsed.data.group ?? null,
+    },
     { status: 201 },
   );
 }

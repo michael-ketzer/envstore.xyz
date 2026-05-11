@@ -112,12 +112,12 @@ under [Roadmap](#roadmap).
 - [x] R2 storage with presigned URLs (split read/write planned)
 - [x] Setup codes for one-command project linking
 - [x] Rate limiting on auth endpoints, security headers, 365-day CLI token TTL
-- [ ] Paddle billing integration (checkout, webhook, trial enforcement)
+- [x] Paddle billing integration (checkout, webhook, trial enforcement)
 - [ ] Version history + rollback UI; `envstore versions` / `envstore rollback`
 - [ ] `envstore share` — re-encrypt to current recipient set
 - [ ] Background cron for soft-delete cleanup
 - [ ] Automated tests
-- [ ] Homebrew tap
+- [x] Homebrew tap
 
 ## Security
 

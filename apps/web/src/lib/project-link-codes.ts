@@ -70,7 +70,7 @@ export type RedeemResult =
   | {
       ok: true;
       workspace: { slug: string };
-      project: { slug: string };
+      project: { slug: string; group: string | null };
     }
   | {
       ok: false;
@@ -113,6 +113,6 @@ export async function redeemLinkCode(opts: {
   return {
     ok: true,
     workspace: { slug: project.workspace.slug },
-    project: { slug: project.slug },
+    project: { slug: project.slug, group: project.group ?? null },
   };
 }

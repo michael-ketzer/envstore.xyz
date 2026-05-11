@@ -192,15 +192,19 @@ export default async function ProjectPage({
           ) : (
             <ol className="space-y-3">
               <Step n={1} title="Install the CLI">
-                <pre className="mt-2 inline-block rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">
-                  curl -fsSL {clientEnv.NEXT_PUBLIC_APP_URL}/install | sh
-                </pre>
+                <CodeBlock
+                  className="mt-2"
+                  code={`curl -fsSL ${clientEnv.NEXT_PUBLIC_APP_URL}/install | sh`}
+                  label="Copy install command"
+                />
               </Step>
               <Step n={2} title="Sign in & set up your identity">
-                <pre className="mt-2 inline-block rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">
-{`envstore login
+                <CodeBlock
+                  className="mt-2"
+                  code={`envstore login
 envstore identity init`}
-                </pre>
+                  label="Copy sign-in commands"
+                />
                 <p className="mt-2 text-xs text-muted-foreground">
                   Generates your local age key and registers your public recipient with the
                   server. Without this, push/pull cannot encrypt to you.
@@ -244,9 +248,7 @@ envstore identity init`}
               n={hasIdentity ? 2 : 4}
               title="Push your first .env"
             >
-              <pre className="mt-2 inline-block rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">
-                envstore push .env
-              </pre>
+              <CodeBlock className="mt-2" code="envstore push .env" label="Copy push command" />
               <p className="mt-2 text-xs text-muted-foreground">
                 Encrypts locally before upload — only your registered identities can decrypt.
               </p>
@@ -273,9 +275,11 @@ function CliInstallStep() {
       <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
         Install
       </p>
-      <pre className="mt-1 inline-block rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">
-        curl -fsSL {clientEnv.NEXT_PUBLIC_APP_URL}/install | sh
-      </pre>
+      <CodeBlock
+        className="mt-1"
+        code={`curl -fsSL ${clientEnv.NEXT_PUBLIC_APP_URL}/install | sh`}
+        label="Copy install command"
+      />
     </div>
   );
 }
@@ -286,10 +290,12 @@ function CliSignInStep() {
       <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
         Sign in + identity
       </p>
-      <pre className="mt-1 inline-block rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">
-{`envstore login
+      <CodeBlock
+        className="mt-1"
+        code={`envstore login
 envstore identity init`}
-      </pre>
+        label="Copy sign-in commands"
+      />
     </div>
   );
 }

@@ -249,7 +249,7 @@ export default function LandingPage() {
             </div>
 
             <CodeBlock
-              className="mt-12 max-w-xl"
+              className="mt-12 min-w-0"
               code={`curl -fsSL https://envstore.xyz/install | sh`}
               label="Copy install command"
             />

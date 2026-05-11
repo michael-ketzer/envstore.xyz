@@ -32,7 +32,11 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        'group relative overflow-hidden rounded-md border border-border bg-muted/40',
+        // Width: shrink to fit the code, but never narrower than half of the
+        // parent (keeps short commands from looking like a tiny pill) and
+        // never wider than the parent. Override `min-w-*` on the landing page
+        // when you want a snug "fit-content only" pill.
+        'group relative w-fit min-w-[50%] max-w-full overflow-hidden rounded-md border border-border bg-muted/40',
         className,
       )}
     >

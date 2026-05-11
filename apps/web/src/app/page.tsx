@@ -359,42 +359,50 @@ export default function LandingPage() {
             </h2>
             <p className="text-muted-foreground mt-4 max-w-2xl">
               You pay per workspace, not per person. Bring your whole team. Bring your CI runners.
-              Bring the intern.
+              Bring the intern. Every new workspace gets a {PRICING.trialDays}-day free trial.
             </p>
-            <div className="mt-12 grid gap-6 lg:grid-cols-2">
-              <PricingCard
-                badge="Personal"
-                title="Personal workspace"
-                price="Free"
-                subtitle="For your own machines"
-                features={[
-                  'A personal workspace at /me',
-                  'Unlimited projects & environments',
-                  'Full CLI — push, pull, history',
-                  'Single user (you)',
-                  'Same zero-knowledge encryption',
-                ]}
-                cta="Create a free account"
-                ctaHref="/login"
-              />
-              <PricingCard
-                badge="Team"
-                highlight
-                title="Team workspace"
-                price={`$${priceDollars}`}
-                priceSuffix="/ month"
-                subtitle={`Flat fee — unlimited members. ${PRICING.trialDays}-day free trial.`}
-                features={[
-                  'Everything in Personal',
-                  'Unlimited team members (no per-seat charge)',
-                  'Multi-recipient encryption (every member can decrypt)',
-                  'Audit log of every push & pull',
-                  `${DEFAULTS.softDeleteRetentionDays}-day soft-delete window`,
-                  'Cancel anytime — see refund policy',
-                ]}
-                cta={`Start ${PRICING.trialDays}-day free trial`}
-                ctaHref="/login"
-              />
+            <div className="mt-12 rounded-md border-2 border-foreground bg-background p-8 sm:p-10">
+              <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-center">
+                <div>
+                  <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+                    Per workspace
+                  </p>
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="text-6xl font-semibold tracking-tight">
+                      ${priceDollars}
+                    </span>
+                    <span className="text-base text-muted-foreground">/ month</span>
+                  </div>
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    Flat fee — unlimited members. {PRICING.trialDays}-day free trial,
+                    no card required.
+                  </p>
+                  <Link
+                    href="/login"
+                    className={`${buttonVariants({ size: 'lg' })} mt-6 w-full sm:w-auto`}
+                  >
+                    Start {PRICING.trialDays}-day free trial
+                  </Link>
+                </div>
+                <ul className="grid gap-3 text-sm md:border-l md:border-border md:pl-10 sm:grid-cols-2">
+                  {[
+                    'Unlimited projects & environments',
+                    'Unlimited members (no per-seat charge)',
+                    'Multi-recipient encryption — every member can decrypt',
+                    'Audit log of every push & pull',
+                    `${DEFAULTS.softDeleteRetentionDays}-day soft-delete window`,
+                    'Personal workspace at /me + as many team workspaces as you want',
+                    'Cancel anytime — see refund policy',
+                  ].map((f) => (
+                    <li key={f} className="flex gap-2">
+                      <span aria-hidden className="select-none text-foreground/60">
+                        ✓
+                      </span>
+                      <span className="text-muted-foreground">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
             <p className="text-muted-foreground mt-8 text-xs">
               Billed in USD via{' '}
@@ -468,67 +476,3 @@ export default function LandingPage() {
   );
 }
 
-function PricingCard({
-  badge,
-  title,
-  price,
-  priceSuffix,
-  subtitle,
-  features,
-  cta,
-  ctaHref,
-  highlight = false,
-}: {
-  badge: string;
-  title: string;
-  price: string;
-  priceSuffix?: string;
-  subtitle: string;
-  features: string[];
-  cta: string;
-  ctaHref: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={
-        highlight
-          ? 'border-foreground bg-background relative flex flex-col rounded-md border-2 p-8'
-          : 'border-border bg-background flex flex-col rounded-md border p-8'
-      }
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">{badge}</p>
-        {highlight ? (
-          <span className="bg-foreground text-background rounded-full px-3 py-1 text-xs font-medium">
-            Recommended
-          </span>
-        ) : null}
-      </div>
-      <h3 className="mt-4 text-xl font-semibold">{title}</h3>
-      <div className="mt-6 flex items-baseline gap-2">
-        <span className="text-4xl font-semibold tracking-tight">{price}</span>
-        {priceSuffix ? <span className="text-muted-foreground text-sm">{priceSuffix}</span> : null}
-      </div>
-      <p className="text-muted-foreground mt-2 text-sm">{subtitle}</p>
-      <ul className="mt-6 space-y-3 text-sm">
-        {features.map((f) => (
-          <li key={f} className="flex gap-2">
-            <span aria-hidden className="text-foreground/60 select-none">
-              ✓
-            </span>
-            <span className="text-muted-foreground">{f}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-8">
-        <Link
-          href={ctaHref}
-          className={buttonVariants({ size: 'lg', variant: highlight ? 'default' : 'outline' })}
-        >
-          {cta}
-        </Link>
-      </div>
-    </div>
-  );
-}

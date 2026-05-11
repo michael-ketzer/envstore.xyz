@@ -15,7 +15,6 @@ type Props = {
   hasPaddleSubscription: boolean;
   // Drives which set of action buttons to surface.
   accessReason:
-    | 'personal'
     | 'active'
     | 'trialing'
     | 'past_due'

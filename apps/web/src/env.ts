@@ -37,6 +37,15 @@ const serverEnvSchema = z.object({
   // so we validate as a non-empty string and let Resend reject malformed values
   // at send time.
   RESEND_FROM: optionalString,
+  // Inbound email forwarding. Resend sends `email.received` webhooks (Svix-
+  // signed) when mail hits any address on our domain (legal@, privacy@, etc.).
+  // We verify with RESEND_WEBHOOK_SECRET and forward the message body to
+  // RESEND_INBOUND_FORWARD_TO. Leaving either unset disables forwarding.
+  RESEND_WEBHOOK_SECRET: optionalString,
+  RESEND_INBOUND_FORWARD_TO: z.preprocess(
+    blankToUndefined,
+    z.string().email().optional(),
+  ),
 
   // R2
   R2_ACCOUNT_ID: optionalString,
@@ -85,6 +94,12 @@ export const features = {
   githubAuth: Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET),
   googleAuth: Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET),
   emailOtp: Boolean(env.RESEND_API_KEY && env.RESEND_FROM),
+  emailInboundForward: Boolean(
+    env.RESEND_API_KEY &&
+      env.RESEND_FROM &&
+      env.RESEND_WEBHOOK_SECRET &&
+      env.RESEND_INBOUND_FORWARD_TO,
+  ),
   r2: Boolean(
     env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET,
   ),

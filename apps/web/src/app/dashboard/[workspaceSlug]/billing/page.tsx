@@ -59,101 +59,82 @@ export default async function BillingPage({
         </p>
       </header>
 
-      {isPersonal ? (
-        <section className="rounded-md border border-border bg-muted/30 p-6">
-          <h2 className="text-lg font-semibold">Personal workspace — free forever</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Personal workspaces are on the house. No card, no subscription, no
-            limits beyond the shared platform caps. To collaborate with
-            teammates, create a Team workspace.
+      <AccessBanner
+        tier={access.tier}
+        reason={access.reason}
+        message={access.message}
+      />
+
+      <section className="space-y-4 rounded-md border border-border p-6">
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h2 className="text-lg font-semibold">
+            {isPersonal ? 'Personal workspace' : 'Team plan'}
+          </h2>
+          <span className="font-mono text-sm text-muted-foreground">
+            ${priceDollars} / month
+            {isPersonal ? null : ' · unlimited members'}
+          </span>
+        </div>
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <DetailRow label="Status" value={subscriptionStatusLabel(sub?.status, access.reason)} />
+          {sub?.trialEndsAt && access.reason === 'trialing' ? (
+            <DetailRow label="Trial ends" value={sub.trialEndsAt.toLocaleString()} />
+          ) : null}
+          {sub?.currentPeriodEnd && access.reason === 'active' ? (
+            <DetailRow label="Renews" value={sub.currentPeriodEnd.toLocaleString()} />
+          ) : null}
+          {sub?.canceledAt ? (
+            <DetailRow label="Canceled at" value={sub.canceledAt.toLocaleString()} />
+          ) : null}
+        </dl>
+
+        {!isOwner ? (
+          <p className="text-sm text-muted-foreground">
+            Only the workspace owner can manage billing.
           </p>
-        </section>
-      ) : (
-        <>
-          <AccessBanner
-            tier={access.tier}
-            reason={access.reason}
-            message={access.message}
+        ) : !billingConfigured ? (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+            Billing is not configured on this deployment. Set{' '}
+            <code className="font-mono">PADDLE_API_KEY</code>,{' '}
+            <code className="font-mono">PADDLE_WEBHOOK_SECRET</code>,{' '}
+            <code className="font-mono">PADDLE_PRICE_ID_TEAM</code>, and{' '}
+            <code className="font-mono">NEXT_PUBLIC_PADDLE_CLIENT_TOKEN</code>.
+          </p>
+        ) : (
+          <BillingActions
+            workspaceSlug={workspaceSlug}
+            paddleEnv={env.PADDLE_ENV}
+            paddleClientToken={clientEnv.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN!}
+            hasPaddleSubscription={Boolean(sub?.paddleSubscriptionId)}
+            accessReason={access.reason}
           />
+        )}
+      </section>
 
-          <section className="space-y-4 rounded-md border border-border p-6">
-            <div className="flex flex-wrap items-baseline gap-3">
-              <h2 className="text-lg font-semibold">Team plan</h2>
-              <span className="font-mono text-sm text-muted-foreground">
-                ${priceDollars} / month · unlimited members
-              </span>
-            </div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              <DetailRow label="Status" value={subscriptionStatusLabel(sub?.status, access.reason)} />
-              {sub?.trialEndsAt && access.reason === 'trialing' ? (
-                <DetailRow
-                  label="Trial ends"
-                  value={sub.trialEndsAt.toLocaleString()}
-                />
-              ) : null}
-              {sub?.currentPeriodEnd && access.reason === 'active' ? (
-                <DetailRow
-                  label="Renews"
-                  value={sub.currentPeriodEnd.toLocaleString()}
-                />
-              ) : null}
-              {sub?.canceledAt ? (
-                <DetailRow
-                  label="Canceled at"
-                  value={sub.canceledAt.toLocaleString()}
-                />
-              ) : null}
-            </dl>
-
-            {!isOwner ? (
-              <p className="text-sm text-muted-foreground">
-                Only the workspace owner can manage billing.
-              </p>
-            ) : !billingConfigured ? (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-                Billing is not configured on this deployment. Set{' '}
-                <code className="font-mono">PADDLE_API_KEY</code>,{' '}
-                <code className="font-mono">PADDLE_WEBHOOK_SECRET</code>,{' '}
-                <code className="font-mono">PADDLE_PRICE_ID_TEAM</code>, and{' '}
-                <code className="font-mono">NEXT_PUBLIC_PADDLE_CLIENT_TOKEN</code>.
-              </p>
-            ) : (
-              <BillingActions
-                workspaceSlug={workspaceSlug}
-                paddleEnv={env.PADDLE_ENV}
-                paddleClientToken={clientEnv.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN!}
-                hasPaddleSubscription={Boolean(sub?.paddleSubscriptionId)}
-                accessReason={access.reason}
-              />
-            )}
-          </section>
-
-          <section className="space-y-3 text-sm text-muted-foreground">
-            <h2 className="text-base font-semibold text-foreground">Payment processor</h2>
-            <p>
-              Payments are processed by{' '}
-              <a
-                href="https://www.paddle.com"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-foreground"
-              >
-                Paddle
-              </a>{' '}
-              as our merchant of record (applicable VAT/sales tax handled
-              automatically). See our{' '}
-              <Link href="/terms" className="underline hover:text-foreground">
-                Terms
-              </Link>{' '}
-              and{' '}
-              <Link href="/refund" className="underline hover:text-foreground">
-                Refund Policy
-              </Link>
-              .
-            </p>
-          </section>
-        </>
-      )}
+      <section className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="text-base font-semibold text-foreground">Payment processor</h2>
+        <p>
+          Payments are processed by{' '}
+          <a
+            href="https://www.paddle.com"
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-foreground"
+          >
+            Paddle
+          </a>{' '}
+          as our merchant of record (applicable VAT/sales tax handled
+          automatically). See our{' '}
+          <Link href="/terms" className="underline hover:text-foreground">
+            Terms
+          </Link>{' '}
+          and{' '}
+          <Link href="/refund" className="underline hover:text-foreground">
+            Refund Policy
+          </Link>
+          .
+        </p>
+      </section>
     </div>
   );
 }

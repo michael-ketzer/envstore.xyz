@@ -24,22 +24,21 @@ export async function GET(_req: Request, ctx: Ctx) {
   const { workspaceSlug } = await ctx.params;
 
   const workspace = await prisma.workspace.findFirst({
-    where: {
-      slug: workspaceSlug,
-      deletedAt: null,
-      ownerId: session.user.id,
-    },
+    where:
+      workspaceSlug === 'me'
+        ? { ownerId: session.user.id, type: 'PERSONAL', deletedAt: null }
+        : {
+            slug: workspaceSlug,
+            deletedAt: null,
+            ownerId: session.user.id,
+          },
     select: {
       id: true,
-      type: true,
       owner: { select: { paddleCustomerId: true } },
       subscription: { select: { paddleSubscriptionId: true } },
     },
   });
   if (!workspace) return apiError('Workspace not found.', 404);
-  if (workspace.type === 'PERSONAL') {
-    return apiError('Personal workspaces have no billing portal.', 400);
-  }
   const customerId = workspace.owner.paddleCustomerId;
   const paddleSubscriptionId = workspace.subscription?.paddleSubscriptionId;
   if (!customerId || !paddleSubscriptionId) {

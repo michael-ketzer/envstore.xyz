@@ -24,21 +24,20 @@ export async function POST(_req: Request, ctx: Ctx) {
   const { workspaceSlug } = await ctx.params;
 
   const workspace = await prisma.workspace.findFirst({
-    where: {
-      slug: workspaceSlug,
-      deletedAt: null,
-      ownerId: session.user.id,
-    },
+    where:
+      workspaceSlug === 'me'
+        ? { ownerId: session.user.id, type: 'PERSONAL', deletedAt: null }
+        : {
+            slug: workspaceSlug,
+            deletedAt: null,
+            ownerId: session.user.id,
+          },
     select: {
       id: true,
-      type: true,
       subscription: { select: { paddleSubscriptionId: true } },
     },
   });
   if (!workspace) return apiError('Workspace not found.', 404);
-  if (workspace.type === 'PERSONAL') {
-    return apiError('Personal workspaces are free — nothing to cancel.', 400);
-  }
   const paddleSubscriptionId = workspace.subscription?.paddleSubscriptionId;
   if (!paddleSubscriptionId) {
     return apiError(

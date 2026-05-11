@@ -5,8 +5,9 @@
 // - 'read-only' — pulls + lists allowed; writes blocked
 // - 'locked'    — everything blocked (subscription long-canceled / trial long-expired)
 //
-// Personal workspaces are always 'full' — they never have a paid subscription.
-// API routes call `requireWorkspaceWrite()` (and similar) to enforce.
+// Every workspace (personal + team alike) carries the same trial → paid model:
+// 14 days free, then $1.99/mo. Workspace.type only changes UX (members, invites,
+// addressing via /me); it has no bearing on billing.
 import 'server-only';
 
 import type { Subscription, Workspace } from '@envstore/db';
@@ -17,7 +18,6 @@ export type WorkspaceAccessTier = 'full' | 'read-only' | 'locked';
 export type WorkspaceAccess = {
   tier: WorkspaceAccessTier;
   reason:
-    | 'personal'
     | 'active'
     | 'trialing'
     | 'past_due'
@@ -38,14 +38,6 @@ type GatedWorkspace = Pick<Workspace, 'type'> & {
 };
 
 export function getWorkspaceAccess(workspace: GatedWorkspace): WorkspaceAccess {
-  if (workspace.type === 'PERSONAL') {
-    return {
-      tier: 'full',
-      reason: 'personal',
-      message: 'Personal workspaces are free, forever.',
-    };
-  }
-
   const sub = workspace.subscription;
   if (!sub) {
     return {

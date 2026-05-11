@@ -29,18 +29,20 @@ export async function POST(_req: Request, ctx: Ctx) {
 
   // Owner-only: only the workspace owner can start a checkout. Members
   // shouldn't be able to put their employer's card on file.
+  // The `me` shortcut resolves to the caller's personal workspace — billing
+  // applies to personal workspaces too (same trial + $1.99/mo terms as team).
   const workspace = await prisma.workspace.findFirst({
-    where: {
-      slug: workspaceSlug,
-      deletedAt: null,
-      ownerId: session.user.id,
-    },
-    select: { id: true, type: true },
+    where:
+      workspaceSlug === 'me'
+        ? { ownerId: session.user.id, type: 'PERSONAL', deletedAt: null }
+        : {
+            slug: workspaceSlug,
+            deletedAt: null,
+            ownerId: session.user.id,
+          },
+    select: { id: true },
   });
   if (!workspace) return apiError('Workspace not found.', 404);
-  if (workspace.type === 'PERSONAL') {
-    return apiError('Personal workspaces are free and do not require a subscription.', 400);
-  }
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },

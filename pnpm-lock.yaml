@@ -96,6 +96,9 @@ importers:
       resend:
         specifier: ^6.12.3
         version: 6.12.3
+      svix:
+        specifier: ^1.93.0
+        version: 1.93.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2383,6 +2386,9 @@ packages:
 
   svix@1.92.2:
     resolution: {integrity: sha512-ZmuA3UVvlnF9EgxlzmPtF7CKjQb64Z6OFlyfdDfU0sdcC7dJa+3aOYX5B9mA+RS6ch1AxBa4UP/l6KmqfGtWBQ==}
+
+  svix@1.93.0:
+    resolution: {integrity: sha512-AeCcSs+CrHNejZytBuvD4hw2B14rB7+Sq7ggwYgF22TgXh0uJJ3T4uVJSbSYKFSbO1AA4o470XoGgOYqu2fbSA==}
 
   tailwind-merge@3.6.0:
     resolution: {integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==}
@@ -4836,6 +4842,10 @@ snapshots:
       react: 19.2.6
 
   svix@1.92.2:
+    dependencies:
+      standardwebhooks: 1.0.0
+
+  svix@1.93.0:
     dependencies:
       standardwebhooks: 1.0.0
 

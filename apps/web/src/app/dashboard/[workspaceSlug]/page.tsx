@@ -100,11 +100,9 @@ export default async function WorkspacePage({
           label="Billing"
           href={`/dashboard/${urlSlug}/billing`}
           value={
-            isPersonal
-              ? 'Free'
-              : ws.subscription?.status === 'TRIALING' && ws.subscription.trialEndsAt
-                ? `Trial until ${ws.subscription.trialEndsAt.toLocaleDateString()}`
-                : (ws.subscription?.status?.toLowerCase() ?? '—')
+            ws.subscription?.status === 'TRIALING' && ws.subscription.trialEndsAt
+              ? `Trial until ${ws.subscription.trialEndsAt.toLocaleDateString()}`
+              : (ws.subscription?.status?.toLowerCase() ?? '—')
           }
         />
         <Stat label="Soft-delete window" value={`${ws.softDeleteRetentionDays}d`} />

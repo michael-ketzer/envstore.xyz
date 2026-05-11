@@ -18,6 +18,8 @@
         "AUTH_GOOGLE_SECRET",
         "RESEND_API_KEY",
         "RESEND_FROM",
+        "RESEND_WEBHOOK_SECRET",
+        "RESEND_INBOUND_FORWARD_TO",
         "R2_ACCOUNT_ID",
         "R2_ACCESS_KEY_ID",
         "R2_SECRET_ACCESS_KEY",

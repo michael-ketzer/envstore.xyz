@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 
 import { clientEnv } from '@/env.client';
 
-const GITHUB_REPO = 'mketzer/envstore.xyz';
+const GITHUB_REPO = 'michael-ketzer/envstore.xyz';
 const BINARY_NAME = 'envstore';
 
 function script(): string {

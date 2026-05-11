@@ -1,15 +1,15 @@
 # Homebrew tap setup
 
 These files live in **this repo** for visibility, but the actual tap is a
-separate GitHub repo named `mketzer/homebrew-envstore`. Homebrew requires that
+separate GitHub repo named `michael-ketzer/homebrew-envstore`. Homebrew requires that
 naming convention.
 
 ## One-time setup
 
 ```sh
-# 1. Create an empty GitHub repo: mketzer/homebrew-envstore
+# 1. Create an empty GitHub repo: michael-ketzer/homebrew-envstore
 # 2. Clone it locally
-git clone https://github.com/mketzer/homebrew-envstore
+git clone https://github.com/michael-ketzer/homebrew-envstore
 cd homebrew-envstore
 
 # 3. Create the Formula directory
@@ -28,7 +28,7 @@ git push
 After that:
 
 ```sh
-brew tap mketzer/envstore
+brew tap michael-ketzer/envstore
 brew install envstore
 ```
 
@@ -49,7 +49,7 @@ Existing users get the upgrade with `brew upgrade envstore` — no re-tap needed
 ## Why a separate repo?
 
 Homebrew's tap discovery looks for repos named `homebrew-<tap>`. Putting the
-formula in this monorepo wouldn't work for `brew tap mketzer/envstore`.
+formula in this monorepo wouldn't work for `brew tap michael-ketzer/envstore`.
 
 ## Automating this later
 

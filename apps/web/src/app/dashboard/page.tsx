@@ -108,7 +108,7 @@ export default async function DashboardPage() {
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               Homebrew
             </p>
-            <pre className="mt-2 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs">{`brew tap mketzer/envstore
+            <pre className="mt-2 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs">{`brew tap michael-ketzer/envstore
 brew install envstore`}</pre>
           </div>
         </div>

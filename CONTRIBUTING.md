@@ -12,7 +12,7 @@ Requirements:
 - **Postgres** — easiest path: [Neon](https://neon.tech) free tier
 
 ```sh
-git clone https://github.com/mketzer/envstore.xyz
+git clone https://github.com/michael-ketzer/envstore.xyz
 cd envstore.xyz
 pnpm install
 cp .env.example .env

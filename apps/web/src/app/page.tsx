@@ -37,7 +37,7 @@ export default function LandingPage() {
           </Link>
           <nav className="flex items-center gap-4 text-sm">
             <a
-              href="https://github.com/mketzer/envstore.xyz"
+              href="https://github.com/michael-ketzer/envstore.xyz"
               target="_blank"
               rel="noreferrer"
               className="text-muted-foreground hover:text-foreground"
@@ -72,7 +72,7 @@ export default function LandingPage() {
               Start {PRICING.trialDays}-day free trial
             </Link>
             <a
-              href="https://github.com/mketzer/envstore.xyz"
+              href="https://github.com/michael-ketzer/envstore.xyz"
               target="_blank"
               rel="noreferrer"
               className="text-sm font-medium text-muted-foreground hover:text-foreground"
@@ -196,7 +196,7 @@ $ envstore push .env`}
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-6 py-8 text-xs text-muted-foreground sm:flex-row sm:items-center">
           <div>© {new Date().getFullYear()} envstore — AGPL v3.</div>
           <div className="flex gap-4">
-            <a href="https://github.com/mketzer/envstore.xyz" target="_blank" rel="noreferrer">
+            <a href="https://github.com/michael-ketzer/envstore.xyz" target="_blank" rel="noreferrer">
               GitHub
             </a>
             <Link href="/privacy">Privacy</Link>

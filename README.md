@@ -1,6 +1,6 @@
 # envstore
 
-[![CI](https://github.com/mketzer/envstore.xyz/actions/workflows/ci.yml/badge.svg)](https://github.com/mketzer/envstore.xyz/actions/workflows/ci.yml)
+[![CI](https://github.com/michael-ketzer/envstore.xyz/actions/workflows/ci.yml/badge.svg)](https://github.com/michael-ketzer/envstore.xyz/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **Zero-knowledge encrypted `.env` file storage.** The server holds ciphertext
@@ -83,7 +83,7 @@ Requirements:
   print to the dev terminal)
 
 ```sh
-git clone https://github.com/mketzer/envstore.xyz
+git clone https://github.com/michael-ketzer/envstore.xyz
 cd envstore.xyz
 pnpm install
 cp .env.example .env

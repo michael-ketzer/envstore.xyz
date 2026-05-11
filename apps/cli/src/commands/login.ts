@@ -97,10 +97,9 @@ export async function login(args: Args): Promise<void> {
       }
       success(`Signed in. Token stored ${c.gray('(macOS Keychain or ~/.config/envstore)')}`);
       muted(`API URL remembered (${apiUrl}). Run other commands without --api-url.`);
-      muted(
-        `Tip: run \`envstore identity init\` next to generate your local age identity,
-     or \`envstore identity import <file>\` if you already have one.`,
-      );
+      console.log();
+      console.log(`Next: run ${c.cyan('envstore identity init')} to generate your local age identity,`);
+      console.log(`      or ${c.cyan('envstore identity import <file>')} if you already have one.`);
       return;
     }
   }

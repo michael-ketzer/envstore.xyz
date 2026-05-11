@@ -15,7 +15,7 @@ export function dataDir(): string {
 }
 
 export function defaultApiUrl(): string {
-  return process.env.ENVSTORE_API_URL ?? 'https://envstore.xyz';
+  return process.env.ENVSTORE_API_URL ?? 'https://www.envstore.xyz';
 }
 
 export function configFile(): string {
@@ -30,4 +30,4 @@ export function identityFile(): string {
   return join(configDir(), 'identity.age');
 }
 
-export const CLI_VERSION = '0.1.2';
+export const CLI_VERSION = '0.1.3';

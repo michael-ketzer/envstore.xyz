@@ -28,15 +28,23 @@ export default async function WorkspacePage({
     projects: {
       where: { deletedAt: null },
       orderBy: { createdAt: 'asc' },
-      include: { _count: { select: { environments: true } } },
+      include: {
+        _count: { select: { environments: true } },
+        group: { select: { slug: true, name: true } },
+      },
+    },
+    projectGroups: {
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        _count: { select: { projects: { where: { deletedAt: null } } } },
+      },
     },
     subscription: true,
     _count: { select: { members: true } },
   });
   if (!ws) notFound();
 
-  // The slug used in URLs. For personal workspaces hitting /dashboard/me, this
-  // is "me" — keeps the user's URL stable even though the DB slug is different.
   const urlSlug = workspaceSlug;
   const isPersonal = ws.type === 'PERSONAL';
 
@@ -85,6 +93,12 @@ export default async function WorkspacePage({
             Settings
           </Link>
           <Link
+            href={`/dashboard/${urlSlug}/groups/new`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            New group
+          </Link>
+          <Link
             href={`/dashboard/${urlSlug}/new`}
             className={buttonVariants({ size: 'sm' })}
           >
@@ -113,7 +127,7 @@ export default async function WorkspacePage({
           <h2 className="text-lg font-semibold">Projects</h2>
         </div>
 
-        {ws.projects.length === 0 ? (
+        {ws.projects.length === 0 && ws.projectGroups.length === 0 ? (
           <div className="mt-4 rounded-md border border-dashed border-border bg-muted/30 p-10 text-center">
             <p className="text-sm text-muted-foreground">No projects yet.</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -128,7 +142,22 @@ export default async function WorkspacePage({
             </Link>
           </div>
         ) : (
-          <ProjectListing workspaceSlug={urlSlug} projects={ws.projects} />
+          <ProjectListing
+            workspaceSlug={urlSlug}
+            projects={ws.projects.map((p) => ({
+              id: p.id,
+              slug: p.slug,
+              name: p.name,
+              groupSlug: p.group?.slug ?? null,
+              environmentCount: p._count.environments,
+            }))}
+            groups={ws.projectGroups.map((g) => ({
+              slug: g.slug,
+              name: g.name,
+              description: g.description,
+              projectCount: g._count.projects,
+            }))}
+          />
         )}
       </section>
 
@@ -145,50 +174,122 @@ type ProjectListItem = {
   id: string;
   slug: string;
   name: string;
-  group: string | null;
-  _count: { environments: number };
+  groupSlug: string | null;
+  environmentCount: number;
+};
+
+type GroupListItem = {
+  slug: string;
+  name: string;
+  description: string | null;
+  projectCount: number;
 };
 
 function ProjectListing({
   workspaceSlug,
   projects,
+  groups,
 }: {
   workspaceSlug: string;
   projects: ProjectListItem[];
+  groups: GroupListItem[];
 }) {
-  // Split into ungrouped (rendered flat) and grouped (rendered as folders).
-  // Within each group, preserve the API ordering (creation order).
-  const ungrouped: ProjectListItem[] = [];
-  const groups = new Map<string, ProjectListItem[]>();
+  const standalone = projects.filter((p) => p.groupSlug === null);
+  const byGroup = new Map<string, ProjectListItem[]>();
   for (const p of projects) {
-    if (p.group) {
-      const bucket = groups.get(p.group) ?? [];
-      bucket.push(p);
-      groups.set(p.group, bucket);
-    } else {
-      ungrouped.push(p);
-    }
+    if (!p.groupSlug) continue;
+    const bucket = byGroup.get(p.groupSlug) ?? [];
+    bucket.push(p);
+    byGroup.set(p.groupSlug, bucket);
   }
-  const groupNames = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b));
 
+  // Empty groups still render (so users can see them and add projects).
   return (
-    <div className="mt-4 space-y-4">
-      {ungrouped.length > 0 ? (
-        <ProjectList workspaceSlug={workspaceSlug} items={ungrouped} />
+    <div className="mt-4 space-y-6">
+      {groups.map((g) => (
+        <GroupCard
+          key={g.slug}
+          workspaceSlug={workspaceSlug}
+          group={g}
+          projects={byGroup.get(g.slug) ?? []}
+        />
+      ))}
+      {standalone.length > 0 ? (
+        <div className="space-y-2">
+          {groups.length > 0 ? (
+            <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Standalone
+            </h3>
+          ) : null}
+          <ProjectList workspaceSlug={workspaceSlug} items={standalone} />
+        </div>
       ) : null}
-      {groupNames.map((name) => (
-        <div key={name} className="space-y-2">
+    </div>
+  );
+}
+
+function GroupCard({
+  workspaceSlug,
+  group,
+  projects,
+}: {
+  workspaceSlug: string;
+  group: GroupListItem;
+  projects: ProjectListItem[];
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
+      <div className="flex items-start justify-between gap-4 border-b border-border bg-muted/40 px-5 py-3">
+        <div className="min-w-0">
           <div className="flex items-baseline gap-2">
             <span aria-hidden className="text-muted-foreground">📁</span>
-            <h3 className="text-sm font-semibold">{name}</h3>
-            <span className="text-xs text-muted-foreground">
-              {groups.get(name)!.length}{' '}
-              {groups.get(name)!.length === 1 ? 'project' : 'projects'}
-            </span>
+            <Link
+              href={`/dashboard/${workspaceSlug}/groups/${group.slug}`}
+              className="text-base font-semibold hover:underline"
+            >
+              {group.name}
+            </Link>
+            <span className="font-mono text-xs text-muted-foreground">{group.slug}</span>
           </div>
-          <ProjectList workspaceSlug={workspaceSlug} items={groups.get(name)!} />
+          {group.description ? (
+            <p className="mt-1 truncate text-xs text-muted-foreground">{group.description}</p>
+          ) : null}
         </div>
-      ))}
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {group.projectCount} {group.projectCount === 1 ? 'project' : 'projects'}
+        </span>
+      </div>
+      {projects.length > 0 ? (
+        <ul className="divide-y divide-border bg-background">
+          {projects.map((p) => (
+            <li key={p.id}>
+              <Link
+                href={`/dashboard/${workspaceSlug}/${p.slug}`}
+                className="flex items-center justify-between px-5 py-3 hover:bg-muted/30"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium">{p.name}</div>
+                  <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {p.environmentCount}{' '}
+                  {p.environmentCount === 1 ? 'environment' : 'environments'}
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="bg-background px-5 py-6 text-center">
+          <p className="text-xs text-muted-foreground">No projects in this group yet.</p>
+          <Link
+            href={`/dashboard/${workspaceSlug}/new?group=${encodeURIComponent(group.slug)}`}
+            className="mt-2 inline-block text-xs text-foreground underline"
+          >
+            Add a project →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
@@ -213,8 +314,8 @@ function ProjectList({
               <div className="font-mono text-xs text-muted-foreground">{p.slug}</div>
             </div>
             <div className="text-xs text-muted-foreground">
-              {p._count.environments}{' '}
-              {p._count.environments === 1 ? 'environment' : 'environments'}
+              {p.environmentCount}{' '}
+              {p.environmentCount === 1 ? 'environment' : 'environments'}
             </div>
           </Link>
         </li>

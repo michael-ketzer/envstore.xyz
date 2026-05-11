@@ -2,6 +2,7 @@
 export * from './auth';
 export * from './workspace';
 export * from './project';
+export * from './project-group';
 export * from './environment';
 export * from './version';
 export * from './invite';

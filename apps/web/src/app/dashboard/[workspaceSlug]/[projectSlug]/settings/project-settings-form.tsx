@@ -1,27 +1,37 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { Button, Input, Label } from '@envstore/ui';
-import { LIMITS } from '@envstore/shared';
+import { LIMITS, slugify } from '@envstore/shared';
 
 import { updateProjectAction, type ProjectSettingsState } from './actions';
 
 const initial: ProjectSettingsState = { ok: false, error: null };
+const NEW_GROUP_SENTINEL = '__new__';
 
 export function ProjectSettingsForm({
   workspaceSlug,
   projectSlug,
   defaultName,
   defaultDescription,
+  defaultGroupSlug,
+  groups,
 }: {
   workspaceSlug: string;
   projectSlug: string;
   defaultName: string;
   defaultDescription: string;
+  defaultGroupSlug: string | null;
+  groups: { slug: string; name: string }[];
 }) {
   const boundAction = updateProjectAction.bind(null, workspaceSlug, projectSlug);
   const [state, action, pending] = useActionState(boundAction, initial);
+  const [groupChoice, setGroupChoice] = useState<string>(defaultGroupSlug ?? '');
+  const [newGroupSlug, setNewGroupSlug] = useState<string>('');
+
+  const submittedGroup =
+    groupChoice === NEW_GROUP_SENTINEL ? newGroupSlug.trim() : groupChoice;
 
   return (
     <form action={action} className="space-y-6">
@@ -43,6 +53,38 @@ export function ProjectSettingsForm({
           maxLength={LIMITS.descriptionMax}
           defaultValue={defaultDescription}
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="group-choice">Group</Label>
+        <select
+          id="group-choice"
+          value={groupChoice}
+          onChange={(e) => setGroupChoice(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="">— No group (standalone) —</option>
+          {groups.map((g) => (
+            <option key={g.slug} value={g.slug}>
+              {g.name} ({g.slug})
+            </option>
+          ))}
+          <option value={NEW_GROUP_SENTINEL}>+ Create new group…</option>
+        </select>
+        {groupChoice === NEW_GROUP_SENTINEL ? (
+          <Input
+            name="new-group-slug"
+            value={newGroupSlug}
+            onChange={(e) => setNewGroupSlug(slugify(e.target.value))}
+            placeholder="my-monorepo"
+            minLength={LIMITS.slugMin}
+            maxLength={LIMITS.slugMax}
+            pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+          />
+        ) : null}
+        <input type="hidden" name="group" value={submittedGroup} />
+        <p className="text-xs text-muted-foreground">
+          Move this project into a group, or pick "No group" to keep it standalone.
+        </p>
       </div>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>

@@ -40,12 +40,16 @@ import { c, info, muted, success } from '../lib/output';
 import { askChoice, askConfirm, askText, requireTty } from '../lib/prompt';
 import type { MeResponse, MeWorkspace } from '../lib/me';
 
-type ProjectSummary = { slug: string; name: string; group?: string | null };
+type ProjectSummary = {
+  slug: string;
+  name: string;
+  group?: { slug: string; name: string } | null;
+};
 
 type RedeemResponse = {
   workspace: string;
   project: string;
-  group: string | null;
+  group: { slug: string; name: string } | null;
 };
 
 function normalizeCode(input: string): string {
@@ -216,7 +220,7 @@ async function maybeExpandLinkIntoMonorepo(opts: {
   console.log();
   info(
     `The link gave you the ${c.cyan(redeemed.project)} project${
-      redeemed.group ? ` (group ${c.cyan(redeemed.group)})` : ''
+      redeemed.group ? ` (group ${c.cyan(redeemed.group.slug)})` : ''
     }.`,
   );
   if (
@@ -231,9 +235,9 @@ async function maybeExpandLinkIntoMonorepo(opts: {
   // Group choice: prefer the redeemed project's existing group; otherwise
   // suggest a sensible default from the repo root and let the user override.
   const groupDefault =
-    redeemed.group ?? slugify(redeemed.project) ?? 'monorepo';
+    redeemed.group?.slug ?? slugify(redeemed.project) ?? 'monorepo';
   const group = redeemed.group
-    ? redeemed.group
+    ? redeemed.group.slug
     : askText('Group (folder) name for these projects', {
         default: groupDefault,
         required: true,

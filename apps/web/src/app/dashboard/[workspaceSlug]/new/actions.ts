@@ -19,10 +19,12 @@ export async function createProjectAction(
   const ws = await getWorkspaceForUser(workspaceSlug, session.user.id, {});
   if (!ws) return { error: 'Workspace not found.' };
 
+  const rawGroup = (formData.get('group') as string | null)?.trim();
   const parsed = projectCreateSchema.safeParse({
     slug: formData.get('slug'),
     name: formData.get('name'),
     description: (formData.get('description') as string)?.trim() || undefined,
+    group: rawGroup ? rawGroup : undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input.' };

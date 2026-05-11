@@ -13,6 +13,10 @@ export type AuditAction =
   | 'project.create'
   | 'project.update'
   | 'project.soft-delete'
+  // Project groups
+  | 'projectGroup.create'
+  | 'projectGroup.update'
+  | 'projectGroup.soft-delete'
   // Environment
   | 'environment.create'
   | 'environment.update'

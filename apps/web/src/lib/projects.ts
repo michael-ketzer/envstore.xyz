@@ -8,6 +8,7 @@ import {
 } from '@envstore/shared';
 
 import { pickUniqueLinkCode } from './project-link-codes';
+import { resolveOrCreateProjectGroupId } from './project-groups';
 
 export type CreateProjectResult =
   | { ok: true; project: { id: string; slug: string } }
@@ -40,19 +41,37 @@ export async function createProject(
     };
   }
 
+  const groupId = input.group
+    ? await resolveOrCreateProjectGroupId(workspaceId, input.group)
+    : null;
+
   const project = await prisma.project.create({
     data: {
       workspaceId,
       slug: input.slug,
       name: input.name,
       description: input.description,
-      group: input.group ?? null,
+      groupId,
       // Stable setup code shown on the project page; surfaced by `envstore link <CODE>`.
       linkCode: await pickUniqueLinkCode(),
     },
     select: { id: true, slug: true },
   });
   return { ok: true, project };
+}
+
+// Apply a `group` update from the API: null means "unassign", a slug means
+// "move to that group (creating it if needed)".
+export async function applyProjectGroupChange(
+  workspaceId: string,
+  projectId: string,
+  group: string | null,
+): Promise<void> {
+  const groupId = group === null ? null : await resolveOrCreateProjectGroupId(workspaceId, group);
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { groupId },
+  });
 }
 
 export async function getProjectForUser<TInclude extends Prisma.ProjectInclude>(

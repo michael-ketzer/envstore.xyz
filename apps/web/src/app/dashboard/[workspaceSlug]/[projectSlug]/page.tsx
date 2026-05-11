@@ -10,7 +10,7 @@ import {
   renderEnvstoreConfig,
 } from '@envstore/shared';
 
-import { CopyButton } from '@/components/copy-button';
+import { CodeBlock } from '@/components/code-block';
 import { clientEnv } from '@/env.client';
 import { requireSession } from '@/lib/auth-helpers';
 import { getProjectForUser } from '@/lib/projects';
@@ -203,17 +203,10 @@ envstore identity init`}
               title="Link this project from your repo"
             >
               <div className="mt-3 space-y-2">
-                <div className="rounded-md border border-border bg-background">
-                  <div className="flex items-center justify-between border-b border-border px-4 py-2">
-                    <span className="font-mono text-xs text-muted-foreground">
-                      setup command
-                    </span>
-                    <CopyButton value={linkCommand} label="Copy" />
-                  </div>
-                  <pre className="overflow-x-auto px-4 py-3 font-mono text-sm">
-                    {linkCommand}
-                  </pre>
-                </div>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  setup command
+                </p>
+                <CodeBlock code={linkCommand} label="Copy setup command" />
                 <p className="text-xs text-muted-foreground">
                   Anyone with workspace access can run this to get{' '}
                   <code className="font-mono">envstore.json</code>. The code is gated by
@@ -224,20 +217,15 @@ envstore identity init`}
                 <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
                   Or write <code className="font-mono">envstore.json</code> by hand
                 </summary>
-                <div className="mt-3 rounded-md border border-border bg-muted/30">
-                  <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {ENVSTORE_CONFIG_FILENAME}
-                    </span>
-                    <CopyButton value={envstoreJson} label="Copy" />
-                  </div>
-                  <pre className="overflow-x-auto px-3 py-3 font-mono text-[11px] text-foreground">
-                    {envstoreJson}
-                  </pre>
+                <div className="mt-3 space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {ENVSTORE_CONFIG_FILENAME}
+                  </p>
+                  <CodeBlock code={envstoreJson} label="Copy envstore.json" />
+                  <p className="text-muted-foreground">
+                    Save this at the repo root and commit it.
+                  </p>
                 </div>
-                <p className="mt-2 text-muted-foreground">
-                  Save this at the repo root and commit it.
-                </p>
               </details>
             </Step>
             <Step

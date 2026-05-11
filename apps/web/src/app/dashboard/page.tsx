@@ -5,6 +5,7 @@ import { prisma } from '@envstore/db';
 import { buttonVariants } from '@envstore/ui';
 import { PERSONAL_WORKSPACE_URL_SLUG, PRICING } from '@envstore/shared';
 
+import { CodeBlock } from '@/components/code-block';
 import { requireSession } from '@/lib/auth-helpers';
 import { ensurePersonalWorkspace } from '@/lib/workspaces';
 
@@ -102,14 +103,22 @@ export default async function DashboardPage() {
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               Recommended
             </p>
-            <pre className="mt-2 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs">curl -fsSL https://envstore.xyz/install | sh</pre>
+            <CodeBlock
+              className="mt-2"
+              code="curl -fsSL https://envstore.xyz/install | sh"
+              label="Copy install command"
+            />
           </div>
           <div>
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               Homebrew
             </p>
-            <pre className="mt-2 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs">{`brew tap michael-ketzer/envstore
-brew install envstore`}</pre>
+            <CodeBlock
+              className="mt-2"
+              code={`brew tap michael-ketzer/envstore
+brew install envstore`}
+              label="Copy install command"
+            />
           </div>
         </div>
         <p className="mt-4 text-xs text-muted-foreground">

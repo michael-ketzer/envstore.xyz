@@ -127,12 +127,13 @@ model Workspace {
   deletedAt               DateTime?
   softDeleteRetentionDays Int       @default(30)
 
-  owner        User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
-  members      WorkspaceMember[]
-  invites      Invite[]
-  projects     Project[]
-  subscription Subscription?
-  auditLogs    AuditLog[]
+  owner         User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members       WorkspaceMember[]
+  invites       Invite[]
+  projects      Project[]
+  projectGroups ProjectGroup[]
+  subscription  Subscription?
+  auditLogs     AuditLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -188,6 +189,24 @@ model Invite {
 // Projects → Environments → Versions
 // =============================================================================
 
+model ProjectGroup {
+  id          String    @id @default(cuid())
+  workspaceId String
+  slug        String
+  name        String
+  description String?
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projects  Project[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, deletedAt])
+}
+
 model Project {
   id          String    @id @default(cuid())
   workspaceId String
@@ -199,19 +218,19 @@ model Project {
   // membership can redeem it with `envstore link <CODE>` to get envstore.json.
   // Nullable only so legacy rows can be lazy-filled on first read.
   linkCode    String?   @unique
-  // Optional folder name for grouping related projects (e.g. all apps of a
-  // single monorepo). Pure UX — no semantic enforcement. NULL means
-  // "ungrouped" and the dashboard renders the project at the top level.
-  group       String?
+  // Optional grouping — projects in the same group are shown together on the
+  // workspace dashboard and get their own group page. Null means "standalone".
+  groupId     String?
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  group        ProjectGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   environments Environment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([workspaceId, slug])
-  @@index([workspaceId, group])
+  @@index([workspaceId, groupId])
   @@index([workspaceId, deletedAt])
 }
 

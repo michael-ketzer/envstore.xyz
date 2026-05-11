@@ -43,7 +43,11 @@ import { c, info, muted, success } from '../lib/output';
 import { askChoice, askConfirm, askText, requireTty } from '../lib/prompt';
 import type { MeResponse, MeWorkspace } from '../lib/me';
 
-type ProjectSummary = { slug: string; name: string; group?: string | null };
+type ProjectSummary = {
+  slug: string;
+  name: string;
+  group?: { slug: string; name: string } | null;
+};
 type ProjectSuggestion = { name: string; slug: string; source: string };
 
 export async function init(args: Args): Promise<void> {

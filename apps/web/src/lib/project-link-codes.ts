@@ -70,7 +70,7 @@ export type RedeemResult =
   | {
       ok: true;
       workspace: { slug: string };
-      project: { slug: string; group: string | null };
+      project: { slug: string; group: { slug: string; name: string } | null };
     }
   | {
       ok: false;
@@ -93,6 +93,7 @@ export async function redeemLinkCode(opts: {
     where: { linkCode: normalized },
     include: {
       workspace: { select: { id: true, slug: true, deletedAt: true } },
+      group: { select: { slug: true, name: true, deletedAt: true } },
     },
   });
   if (!project || project.deletedAt || project.workspace.deletedAt) {
@@ -110,9 +111,13 @@ export async function redeemLinkCode(opts: {
     };
   }
 
+  const group =
+    project.group && !project.group.deletedAt
+      ? { slug: project.group.slug, name: project.group.name }
+      : null;
   return {
     ok: true,
     workspace: { slug: project.workspace.slug },
-    project: { slug: project.slug, group: project.group ?? null },
+    project: { slug: project.slug, group },
   };
 }

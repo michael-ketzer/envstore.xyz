@@ -149,12 +149,14 @@ export async function push(args: Args): Promise<void> {
     }
 
     // ----- Push every match -----
+    // Multi-file mode collapses each push to a single line and prints one
+    // "pull on another machine" hint at the end, instead of repeating the same
+    // 4-line progress block per file.
+    const quiet = plans.length > 1;
+    const summaries: PushSummary[] = [];
     for (const [i, plan] of plans.entries()) {
-      if (plans.length > 1) {
-        info(c.gray(`\n[${i + 1}/${plans.length}] ${plan.file.path}`));
-      }
       const filePath = resolve(configDir, plan.file.path);
-      await pushOneFile({
+      const summary = await pushOneFile({
         client,
         workspace,
         projectSlug: plan.file.project,
@@ -163,10 +165,19 @@ export async function push(args: Args): Promise<void> {
         envSlug: plan.envSlug!,
         recipients,
         comment: stringFlag(args.flags['comment']),
+        quiet,
+        index: quiet ? { current: i + 1, total: plans.length } : null,
       });
+      summaries.push(summary);
     }
-    if (plans.length > 1) {
-      success(`Pushed ${plans.length}/${plans.length} files.`);
+    if (quiet) {
+      success(`Pushed ${plans.length} file${plans.length === 1 ? '' : 's'}.`);
+      const envs = Array.from(new Set(summaries.map((s) => s.envSlug)));
+      const pullCmd =
+        envs.length === 1 && envs[0] !== 'development'
+          ? `envstore pull ${envs[0]}`
+          : 'envstore pull';
+      muted(`Pull on another machine: \`${pullCmd}\``);
     }
 
     // ----- Persist the answer back to envstore.json -----
@@ -260,6 +271,8 @@ export async function push(args: Args): Promise<void> {
   }
 }
 
+type PushSummary = { envSlug: string; version: number; ciphertextSize: number };
+
 async function pushOneFile(args: {
   client: ApiClient;
   workspace: string;
@@ -269,9 +282,21 @@ async function pushOneFile(args: {
   envSlug: string;
   recipients: string[];
   comment?: string;
-}): Promise<void> {
-  const { client, workspace, projectSlug, filePath, displayPath, envSlug, recipients, comment } =
-    args;
+  quiet?: boolean;
+  index?: { current: number; total: number } | null;
+}): Promise<PushSummary> {
+  const {
+    client,
+    workspace,
+    projectSlug,
+    filePath,
+    displayPath,
+    envSlug,
+    recipients,
+    comment,
+    quiet = false,
+    index = null,
+  } = args;
 
   let plaintext: Uint8Array;
   try {
@@ -300,11 +325,13 @@ async function pushOneFile(args: {
     if (!askConfirm('Push anyway?', false)) throw new CliError('Cancelled.');
   }
 
-  info(
-    `Encrypting ${c.cyan(displayPath)} to ${recipients.length} recipient${
-      recipients.length === 1 ? '' : 's'
-    }…`,
-  );
+  if (!quiet) {
+    info(
+      `Encrypting ${c.cyan(displayPath)} to ${recipients.length} recipient${
+        recipients.length === 1 ? '' : 's'
+      }…`,
+    );
+  }
   const ciphertext = await encryptForRecipients(plaintext, recipients);
   if (ciphertext.byteLength > LIMITS.maxCiphertextBytes) {
     throw new CliError(
@@ -325,7 +352,7 @@ async function pushOneFile(args: {
     },
   );
 
-  info(`Uploading v${init.version} (${ciphertext.byteLength} bytes)…`);
+  if (!quiet) info(`Uploading v${init.version} (${ciphertext.byteLength} bytes)…`);
   const putRes = await fetch(init.uploadUrl, {
     method: 'PUT',
     body: ciphertext,
@@ -346,12 +373,30 @@ async function pushOneFile(args: {
 
   const displayWorkspace =
     init.workspaceType === 'PERSONAL' ? PERSONAL_WORKSPACE_URL_SLUG : workspace;
-  success(
-    `Pushed ${c.cyan(`${displayWorkspace}/${projectSlug}`)} → ${c.cyan(init.environmentSlug)} (v${init.version}).`,
-  );
-  muted(
-    `On another machine: \`envstore pull${init.environmentSlug === 'development' ? '' : ` ${init.environmentSlug}`}\``,
-  );
+  if (quiet) {
+    const prefix = index ? c.gray(`[${index.current}/${index.total}]`) : '';
+    success(
+      `${prefix} ${c.cyan(displayPath)} → ${c.cyan(`${projectSlug}/${init.environmentSlug}`)} (v${init.version}, ${formatBytes(ciphertext.byteLength)})`,
+    );
+  } else {
+    success(
+      `Pushed ${c.cyan(`${displayWorkspace}/${projectSlug}`)} → ${c.cyan(init.environmentSlug)} (v${init.version}).`,
+    );
+    muted(
+      `On another machine: \`envstore pull${init.environmentSlug === 'development' ? '' : ` ${init.environmentSlug}`}\``,
+    );
+  }
+  return {
+    envSlug: init.environmentSlug,
+    version: init.version,
+    ciphertextSize: ciphertext.byteLength,
+  };
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 // File path is now an ABSOLUTE path; we look at its basename. `preset` is the

@@ -8,7 +8,7 @@ import { projectUpdateSchema } from '@envstore/shared';
 
 import { recordAudit } from '@/lib/audit';
 import { requireSession } from '@/lib/auth-helpers';
-import { getProjectForUser } from '@/lib/projects';
+import { applyProjectGroupChange, getProjectForUser } from '@/lib/projects';
 import { getWorkspaceMembershipWithRole } from '@/lib/workspace-roles';
 
 export type ProjectSettingsState = { ok: boolean; error: string | null };
@@ -26,9 +26,22 @@ export async function updateProjectAction(
   const project = await getProjectForUser(workspaceSlug, projectSlug, session.user.id, {});
   if (!project) return { ok: false, error: 'Project not found.' };
 
+  // The group field is a tri-state: missing key → no change, empty string →
+  // unassign (null), non-empty slug → move into / create that group.
+  const rawGroup = formData.get('group');
+  const groupInput =
+    rawGroup === null
+      ? undefined
+      : typeof rawGroup === 'string'
+        ? rawGroup.trim() === ''
+          ? null
+          : rawGroup.trim()
+        : undefined;
+
   const parsed = projectUpdateSchema.safeParse({
     name: (formData.get('name') as string)?.trim() || undefined,
     description: ((formData.get('description') as string) ?? '').trim() || null,
+    group: groupInput,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
@@ -37,16 +50,22 @@ export async function updateProjectAction(
   const data: Record<string, unknown> = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
   if (parsed.data.description !== undefined) data.description = parsed.data.description;
-  if (Object.keys(data).length === 0) return { ok: true, error: null };
+  const groupChanged = parsed.data.group !== undefined;
+  if (Object.keys(data).length === 0 && !groupChanged) return { ok: true, error: null };
 
-  await prisma.project.update({ where: { id: project.id }, data });
+  if (Object.keys(data).length > 0) {
+    await prisma.project.update({ where: { id: project.id }, data });
+  }
+  if (groupChanged) {
+    await applyProjectGroupChange(membership.workspaceId, project.id, parsed.data.group ?? null);
+  }
   await recordAudit({
     workspaceId: membership.workspaceId,
     userId: session.user.id,
     action: 'project.update',
     resourceType: 'project',
     resourceId: project.id,
-    metadata: data,
+    metadata: groupChanged ? { ...data, group: parsed.data.group ?? null } : data,
   });
   revalidatePath(`/dashboard/${workspaceSlug}/${projectSlug}`);
   revalidatePath(`/dashboard/${workspaceSlug}/${projectSlug}/settings`);

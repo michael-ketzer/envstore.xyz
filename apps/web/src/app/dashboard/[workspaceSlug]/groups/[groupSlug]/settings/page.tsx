@@ -5,42 +5,38 @@ import { notFound } from 'next/navigation';
 import type { WorkspaceRole } from '@envstore/shared';
 
 import { requireSession } from '@/lib/auth-helpers';
-import { getProjectForUser } from '@/lib/projects';
+import { getProjectGroupForUser } from '@/lib/project-groups';
 import { hasAtLeastRole } from '@/lib/workspace-roles';
-import { DeleteProject } from './delete-project';
-import { ProjectSettingsForm } from './project-settings-form';
+
+import { DeleteGroup } from './delete-group';
+import { GroupSettingsForm } from './group-settings-form';
 
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ workspaceSlug: string; projectSlug: string }>;
+  params: Promise<{ workspaceSlug: string; groupSlug: string }>;
 }): Promise<Metadata> {
-  const { workspaceSlug, projectSlug } = await params;
-  return { title: `Settings — ${workspaceSlug}/${projectSlug} — envstore` };
+  const { workspaceSlug, groupSlug } = await params;
+  return { title: `Settings — ${workspaceSlug}/${groupSlug} — envstore` };
 }
 
-export default async function ProjectSettingsPage({
+export default async function GroupSettingsPage({
   params,
 }: {
-  params: Promise<{ workspaceSlug: string; projectSlug: string }>;
+  params: Promise<{ workspaceSlug: string; groupSlug: string }>;
 }) {
   const session = await requireSession();
-  const { workspaceSlug, projectSlug } = await params;
-  const project = await getProjectForUser(workspaceSlug, projectSlug, session.user.id, {
-    group: { select: { slug: true } },
+  const { workspaceSlug, groupSlug } = await params;
+  const group = await getProjectGroupForUser(workspaceSlug, groupSlug, session.user.id, {
     workspace: {
       include: {
         members: { where: { userId: session.user.id }, select: { role: true } },
-        projectGroups: {
-          where: { deletedAt: null },
-          orderBy: { name: 'asc' },
-          select: { slug: true, name: true },
-        },
       },
     },
+    _count: { select: { projects: { where: { deletedAt: null } } } },
   });
-  if (!project) notFound();
-  const myRole = project.workspace.members[0]?.role as WorkspaceRole | undefined;
+  if (!group) notFound();
+  const myRole = group.workspace.members[0]?.role as WorkspaceRole | undefined;
   const canDelete = myRole !== undefined && hasAtLeastRole(myRole, 'ADMIN');
 
   return (
@@ -52,26 +48,24 @@ export default async function ProjectSettingsPage({
           </Link>
           <span className="px-1">/</span>
           <Link
-            href={`/dashboard/${workspaceSlug}/${projectSlug}`}
+            href={`/dashboard/${workspaceSlug}/groups/${groupSlug}`}
             className="hover:text-foreground"
           >
-            {projectSlug}
+            {groupSlug}
           </Link>
           <span className="px-1">/</span>
           <span className="text-foreground">settings</span>
         </nav>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Project settings</h1>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Group settings</h1>
       </header>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">General</h2>
-        <ProjectSettingsForm
+        <GroupSettingsForm
           workspaceSlug={workspaceSlug}
-          projectSlug={projectSlug}
-          defaultName={project.name}
-          defaultDescription={project.description ?? ''}
-          defaultGroupSlug={project.group?.slug ?? null}
-          groups={project.workspace.projectGroups}
+          groupSlug={groupSlug}
+          defaultName={group.name}
+          defaultDescription={group.description ?? ''}
         />
       </section>
 
@@ -79,10 +73,10 @@ export default async function ProjectSettingsPage({
         <section className="space-y-4">
           <h2 className="text-lg font-semibold text-destructive">Danger zone</h2>
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-5">
-            <DeleteProject
+            <DeleteGroup
               workspaceSlug={workspaceSlug}
-              projectSlug={projectSlug}
-              retentionDays={project.workspace.softDeleteRetentionDays}
+              groupSlug={groupSlug}
+              projectCount={group._count.projects}
             />
           </div>
         </section>

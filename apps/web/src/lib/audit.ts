@@ -1,5 +1,4 @@
 import 'server-only';
-import { headers } from 'next/headers';
 
 import { prisma, type Prisma } from '@envstore/db';
 
@@ -60,12 +59,9 @@ export type RecordAuditInput = {
 };
 
 export async function recordAudit(input: RecordAuditInput): Promise<void> {
-  const h = await headers();
-  const ipForwarded = h.get('x-forwarded-for');
-  const ipAddress =
-    ipForwarded?.split(',')[0]?.trim() ?? h.get('x-real-ip') ?? null;
-  const userAgent = h.get('user-agent') ?? null;
-
+  // We deliberately do NOT capture IP address or User-Agent from the request
+  // here — see the AuditLog model comment. The audit log answers "who did
+  // what, when", which is fully covered by actor + action + timestamp.
   await prisma.auditLog.create({
     data: {
       workspaceId: input.workspaceId ?? null,
@@ -74,8 +70,6 @@ export async function recordAudit(input: RecordAuditInput): Promise<void> {
       action: input.action,
       resourceType: input.resourceType ?? null,
       resourceId: input.resourceId ?? null,
-      ipAddress,
-      userAgent,
       metadata:
         input.metadata === undefined
           ? undefined

@@ -92,9 +92,6 @@ export default async function AuditPage({
                   </pre>
                 ) : null}
               </div>
-              <div className="hidden shrink-0 text-right text-[11px] text-muted-foreground sm:block">
-                {e.ipAddress ?? '—'}
-              </div>
             </li>
           ))}
         </ul>

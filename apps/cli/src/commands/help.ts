@@ -71,6 +71,14 @@ const SECTIONS: ReadonlyArray<Section> = [
     ],
   },
   {
+    title: 'CI / service tokens',
+    entries: [
+      ['token create <name>', 'Mint a workspace-scoped service token (one-shot output)'],
+      ['token list', 'List service tokens for the workspace'],
+      ['token revoke <id>', 'Revoke a service token immediately'],
+    ],
+  },
+  {
     title: 'About',
     entries: [
       ['licenses', 'Print third-party licenses bundled with envstore'],

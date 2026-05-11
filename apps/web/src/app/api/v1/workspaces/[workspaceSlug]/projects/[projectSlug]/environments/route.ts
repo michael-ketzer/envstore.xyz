@@ -1,6 +1,11 @@
 import { prisma } from '@envstore/db';
 
-import { authenticateBearer, notFound, unauthorized } from '@/lib/api-auth';
+import {
+  authenticateBearer,
+  notFound,
+  resolveWorkspaceForAuth,
+  unauthorized,
+} from '@/lib/api-auth';
 
 type Ctx = { params: Promise<{ workspaceSlug: string; projectSlug: string }> };
 
@@ -9,16 +14,11 @@ export async function GET(req: Request, ctx: Ctx) {
   if (!auth) return unauthorized();
   const { workspaceSlug, projectSlug } = await ctx.params;
 
+  const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
+  if (!ws) return notFound('Workspace not found.');
+
   const project = await prisma.project.findFirst({
-    where: {
-      slug: projectSlug,
-      deletedAt: null,
-      workspace: {
-        slug: workspaceSlug,
-        deletedAt: null,
-        members: { some: { userId: auth.user.id } },
-      },
-    },
+    where: { workspaceId: ws.id, slug: projectSlug, deletedAt: null },
     select: { id: true },
   });
   if (!project) return notFound('Project not found.');

@@ -12,8 +12,10 @@ import { prisma } from '@envstore/db';
 
 import {
   apiError,
+  auditFieldsFor,
   authenticateBearer,
   notFound,
+  resolveWorkspaceForAuth,
   unauthorized,
 } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
@@ -28,24 +30,14 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!auth) return unauthorized();
   const { workspaceSlug, projectSlug, versionId } = await ctx.params;
 
+  const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
+  if (!ws) return notFound('Workspace not found.');
   const version = await prisma.envFileVersion.findFirst({
     where: {
       id: versionId,
       environment: {
         deletedAt: null,
-        project: {
-          slug: projectSlug,
-          deletedAt: null,
-          workspace: {
-            deletedAt: null,
-            OR: [
-              { slug: workspaceSlug, members: { some: { userId: auth.user.id } } },
-              ...(workspaceSlug === 'me'
-                ? [{ ownerId: auth.user.id, type: 'PERSONAL' as const }]
-                : []),
-            ],
-          },
-        },
+        project: { slug: projectSlug, workspaceId: ws.id, deletedAt: null },
       },
     },
     include: {
@@ -80,7 +72,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   await recordAudit({
     workspaceId: version.environment.project.workspaceId,
-    userId: auth.user.id,
+    ...auditFieldsFor(auth),
     action: 'environment.update',
     resourceType: 'envFileVersion',
     resourceId: version.id,
@@ -88,7 +80,7 @@ export async function POST(req: Request, ctx: Ctx) {
       env: version.environment.slug,
       version: version.version,
       finalized: true,
-      via: 'cli',
+      via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
     },
   });
 

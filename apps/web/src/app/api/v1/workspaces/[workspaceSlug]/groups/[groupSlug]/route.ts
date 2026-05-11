@@ -5,38 +5,34 @@ import {
   apiError,
   authenticateBearer,
   notFound,
+  requireUserAuth,
+  resolveWorkspaceForAuth,
   unauthorized,
 } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
 import {
-  getProjectGroupForUser,
   softDeleteProjectGroup,
   updateProjectGroup,
 } from '@/lib/project-groups';
 
 type Ctx = { params: Promise<{ workspaceSlug: string; groupSlug: string }> };
 
-async function workspaceForUser(workspaceSlug: string, userId: string) {
-  return prisma.workspace.findFirst({
-    where: {
-      slug: workspaceSlug,
-      deletedAt: null,
-      members: { some: { userId } },
-    },
-    select: { id: true, slug: true },
-  });
-}
-
 export async function GET(req: Request, ctx: Ctx) {
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
   const { workspaceSlug, groupSlug } = await ctx.params;
 
-  const group = await getProjectGroupForUser(workspaceSlug, groupSlug, auth.user.id, {
-    projects: {
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'asc' },
-      select: { slug: true, name: true, description: true },
+  const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
+  if (!ws) return notFound('Workspace not found.');
+
+  const group = await prisma.projectGroup.findFirst({
+    where: { workspaceId: ws.id, slug: groupSlug, deletedAt: null },
+    include: {
+      projects: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: { slug: true, name: true, description: true },
+      },
     },
   });
   if (!group) return notFound('Group not found.');
@@ -52,9 +48,11 @@ export async function GET(req: Request, ctx: Ctx) {
 export async function PATCH(req: Request, ctx: Ctx) {
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
+  const userAuth = requireUserAuth(auth);
+  if (userAuth instanceof Response) return userAuth;
   const { workspaceSlug, groupSlug } = await ctx.params;
 
-  const ws = await workspaceForUser(workspaceSlug, auth.user.id);
+  const ws = await resolveWorkspaceForAuth(userAuth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
 
   let body: unknown;
@@ -74,7 +72,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   await recordAudit({
     workspaceId: ws.id,
-    userId: auth.user.id,
+    userId: userAuth.user.id,
     action: 'projectGroup.update',
     resourceType: 'projectGroup',
     metadata: { slug: groupSlug, via: 'cli' },
@@ -85,9 +83,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(req: Request, ctx: Ctx) {
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
+  const userAuth = requireUserAuth(auth);
+  if (userAuth instanceof Response) return userAuth;
   const { workspaceSlug, groupSlug } = await ctx.params;
 
-  const ws = await workspaceForUser(workspaceSlug, auth.user.id);
+  const ws = await resolveWorkspaceForAuth(userAuth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
 
   const result = await softDeleteProjectGroup(ws.id, groupSlug);
@@ -96,7 +96,7 @@ export async function DELETE(req: Request, ctx: Ctx) {
   }
   await recordAudit({
     workspaceId: ws.id,
-    userId: auth.user.id,
+    userId: userAuth.user.id,
     action: 'projectGroup.soft-delete',
     resourceType: 'projectGroup',
     metadata: { slug: groupSlug, via: 'cli' },

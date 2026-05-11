@@ -17,6 +17,7 @@ import {
   apiError,
   authenticateBearer,
   notFound,
+  resolveWorkspaceForAuth,
   unauthorized,
 } from '@/lib/api-auth';
 import { presignGet, R2NotConfiguredError } from '@/lib/r2';
@@ -41,23 +42,13 @@ export async function GET(req: Request, ctx: Ctx) {
     return apiError(parsed.error.issues[0]?.message ?? 'Invalid query.', 400);
   }
 
+  const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
+  if (!ws) return notFound('Workspace not found.');
   const environment = await prisma.environment.findFirst({
     where: {
       slug: parsed.data.env,
       deletedAt: null,
-      project: {
-        slug: projectSlug,
-        deletedAt: null,
-        workspace: {
-          deletedAt: null,
-          OR: [
-            { slug: workspaceSlug, members: { some: { userId: auth.user.id } } },
-            ...(workspaceSlug === 'me'
-              ? [{ ownerId: auth.user.id, type: 'PERSONAL' as const }]
-              : []),
-          ],
-        },
-      },
+      project: { slug: projectSlug, workspaceId: ws.id, deletedAt: null },
     },
     include: {
       currentVersion: {

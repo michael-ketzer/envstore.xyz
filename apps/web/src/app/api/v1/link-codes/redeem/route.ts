@@ -6,7 +6,7 @@
 
 import { z } from 'zod';
 
-import { apiError, authenticateBearer, unauthorized } from '@/lib/api-auth';
+import { apiError, authenticateBearer, requireUserAuth, unauthorized } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
 import { redeemLinkCode } from '@/lib/project-link-codes';
 import { rateLimitByIp, tooManyRequests } from '@/lib/rate-limit';
@@ -24,6 +24,8 @@ export async function POST(req: Request) {
 
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
+  const userAuth = requireUserAuth(auth);
+  if (userAuth instanceof Response) return userAuth;
 
   let body: unknown;
   try {
@@ -36,14 +38,14 @@ export async function POST(req: Request) {
     return apiError(parsed.error.issues[0]?.message ?? 'Invalid input.', 400);
   }
 
-  const result = await redeemLinkCode({ code: parsed.data.code, userId: auth.user.id });
+  const result = await redeemLinkCode({ code: parsed.data.code, userId: userAuth.user.id });
   if (!result.ok) {
     const status = result.reason === 'not-found' ? 404 : 403;
     return apiError(result.message, status);
   }
 
   await recordAudit({
-    userId: auth.user.id,
+    userId: userAuth.user.id,
     action: 'invite.accept',
     resourceType: 'projectLinkCode',
     metadata: {

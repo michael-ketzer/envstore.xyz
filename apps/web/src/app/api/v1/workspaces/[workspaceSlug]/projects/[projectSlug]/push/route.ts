@@ -20,8 +20,10 @@ import { z } from 'zod';
 
 import {
   apiError,
+  auditFieldsFor,
   authenticateBearer,
   notFound,
+  resolveWorkspaceForAuth,
   unauthorized,
 } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
@@ -50,21 +52,10 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!auth) return unauthorized();
   const { workspaceSlug, projectSlug } = await ctx.params;
 
+  const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
+  if (!ws) return notFound('Workspace not found.');
   const project = await prisma.project.findFirst({
-    where: {
-      slug: projectSlug,
-      deletedAt: null,
-      workspace: {
-        deletedAt: null,
-        OR: [
-          { slug: workspaceSlug, members: { some: { userId: auth.user.id } } },
-          // Allow `me` to address the caller's personal workspace.
-          ...(workspaceSlug === 'me'
-            ? [{ ownerId: auth.user.id, type: 'PERSONAL' as const }]
-            : []),
-        ],
-      },
-    },
+    where: { workspaceId: ws.id, slug: projectSlug, deletedAt: null },
     select: {
       id: true,
       workspaceId: true,
@@ -140,6 +131,11 @@ export async function POST(req: Request, ctx: Ctx) {
     version: versionNumber,
   });
 
+  // Version row's creator is always a real user — for token-auth pushes we
+  // record the admin who minted the token, and the "via CI" signal lives on
+  // the audit row (workspaceTokenId).
+  const createdByUserId =
+    auth.kind === 'user' ? auth.user.id : auth.token.createdByUserId;
   const created = await prisma.envFileVersion.create({
     data: {
       environmentId: environment.id,
@@ -149,7 +145,7 @@ export async function POST(req: Request, ctx: Ctx) {
       ciphertextSha256: hexToBytes(parsed.data.ciphertextSha256),
       recipientsHash: hexToBytes(parsed.data.recipientsHash),
       comment: parsed.data.comment ?? null,
-      createdByUserId: auth.user.id,
+      createdByUserId,
     },
     select: { id: true, version: true },
   });
@@ -164,7 +160,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   await recordAudit({
     workspaceId: project.workspaceId,
-    userId: auth.user.id,
+    ...auditFieldsFor(auth),
     action: 'environment.create',
     resourceType: 'envFileVersion',
     resourceId: created.id,
@@ -172,7 +168,7 @@ export async function POST(req: Request, ctx: Ctx) {
       env: environment.slug,
       version: created.version,
       ciphertextSize: parsed.data.ciphertextSize,
-      via: 'cli',
+      via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
     },
   });
 

@@ -2,14 +2,16 @@ import { prisma } from '@envstore/db';
 import { LIMITS, recipientRegisterSchema, detectRecipientKind } from '@envstore/shared';
 import { parseRecipient } from '@envstore/crypto/recipients';
 
-import { apiError, authenticateBearer, unauthorized } from '@/lib/api-auth';
+import { apiError, authenticateBearer, requireUserAuth, unauthorized } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
 
 export async function GET(req: Request) {
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
+  const userAuth = requireUserAuth(auth);
+  if (userAuth instanceof Response) return userAuth;
   const recipients = await prisma.userRecipient.findMany({
-    where: { userId: auth.user.id },
+    where: { userId: userAuth.user.id },
     orderBy: { createdAt: 'asc' },
     select: {
       id: true,
@@ -26,6 +28,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
+  const userAuth = requireUserAuth(auth);
+  if (userAuth instanceof Response) return userAuth;
 
   let body: unknown;
   try {
@@ -52,7 +56,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const existingCount = await prisma.userRecipient.count({ where: { userId: auth.user.id } });
+  const existingCount = await prisma.userRecipient.count({ where: { userId: userAuth.user.id } });
   if (existingCount >= LIMITS.maxRecipientsPerUser) {
     return apiError(
       `You already have ${existingCount} recipients (cap: ${LIMITS.maxRecipientsPerUser}). Revoke one before adding another.`,
@@ -61,7 +65,7 @@ export async function POST(req: Request) {
   }
 
   const existing = await prisma.userRecipient.findUnique({
-    where: { userId_recipient: { userId: auth.user.id, recipient: parsed.data.recipient } },
+    where: { userId_recipient: { userId: userAuth.user.id, recipient: parsed.data.recipient } },
   });
   if (existing) {
     // Treat as success — update label if changed.
@@ -81,14 +85,14 @@ export async function POST(req: Request) {
 
   const created = await prisma.userRecipient.create({
     data: {
-      userId: auth.user.id,
+      userId: userAuth.user.id,
       recipient: parsed.data.recipient,
       kind: parsed.data.kind,
       label: parsed.data.label,
     },
   });
   await recordAudit({
-    userId: auth.user.id,
+    userId: userAuth.user.id,
     action: 'recipient.register',
     resourceType: 'recipient',
     resourceId: created.id,

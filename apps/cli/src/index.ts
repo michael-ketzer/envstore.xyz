@@ -20,6 +20,7 @@ import { ls } from './commands/ls';
 import { pull } from './commands/pull';
 import { push } from './commands/push';
 import { sync } from './commands/sync';
+import { token } from './commands/token';
 import { whoami } from './commands/whoami';
 
 type Handler = (args: Args) => Promise<void>;
@@ -36,6 +37,7 @@ const COMMANDS: Record<string, Handler> = {
   push,
   pull,
   sync,
+  token,
   licenses,
   help,
 };

@@ -89,6 +89,18 @@ export default async function WorkspacePage({
             Billing
           </Link>
           <Link
+            href={`/dashboard/${urlSlug}/tokens`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Tokens
+          </Link>
+          <Link
+            href={`/dashboard/${urlSlug}/audit`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Audit
+          </Link>
+          <Link
             href={`/dashboard/${urlSlug}/settings`}
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >

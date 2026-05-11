@@ -48,6 +48,12 @@ export async function saveToken(apiUrl: string, token: string): Promise<void> {
 }
 
 export async function loadToken(apiUrl: string): Promise<string | null> {
+  // CI/runner path: an env-var-supplied bearer wins over local keychain/file
+  // so workflows can authenticate without persisting anything to disk. Both
+  // user CLI tokens (no prefix) and workspace service tokens (`eswtok_`)
+  // round-trip the same way — the server discriminates by prefix.
+  const fromEnv = process.env['ENVSTORE_TOKEN']?.trim();
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
   if (isKeychainAvailable()) {
     try {
       const v = await keychainGet(KEYCHAIN_SERVICE, apiUrl);

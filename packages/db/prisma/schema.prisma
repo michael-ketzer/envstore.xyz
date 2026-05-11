@@ -33,6 +33,7 @@ model User {
   workspaceMembers     WorkspaceMember[]
   ownedWorkspaces      Workspace[]            @relation("WorkspaceOwner")
   cliTokens            CliToken[]
+  workspaceTokensCreated WorkspaceToken[]     @relation("WorkspaceTokenCreator")
   auditLogs            AuditLog[]
   invitesSent          Invite[]               @relation("InvitedBy")
   versionsCreated      EnvFileVersion[]
@@ -132,6 +133,7 @@ model Workspace {
   invites       Invite[]
   projects      Project[]
   projectGroups ProjectGroup[]
+  tokens        WorkspaceToken[]
   subscription  Subscription?
   auditLogs     AuditLog[]
 
@@ -297,6 +299,44 @@ model CliToken {
   @@index([userId])
 }
 
+// Workspace-scoped service token for CI/CD pulls and pushes. Not tied to a
+// user: the credential survives offboarding the human who minted it and
+// authorizes the holder to read/write secrets in this workspace only.
+//
+// The bearer (shown once at creation, then sha256-hashed at rest) authorizes
+// the API call. The `recipient` is the public half of an age keypair generated
+// on the minting machine — the server never sees the private key. Push
+// encrypts to this recipient alongside human members, so the CI runner can
+// decrypt with the private half it holds in its secret store.
+//
+// Tokens cannot escalate: the mutating API endpoints (token create/revoke,
+// invites, role changes, billing, settings, deletes) accept only user-auth.
+model WorkspaceToken {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  name            String        // user-facing label, e.g. "ci-prod"
+  tokenHash       String        @unique // sha256(token); bearer shown once
+  recipient       String        // public age recipient (or ssh-ed25519 key)
+  recipientKind   RecipientKind @default(AGE_X25519)
+  // Coarse permission flags. v1 only has "read" and "write"; we keep the
+  // shape so finer-grained scoping (per-project, per-env) can layer on later
+  // without a migration.
+  scopes          String[]      @default(["read", "write"])
+  expiresAt       DateTime?     // nullable = no expiry (discouraged but allowed)
+  revokedAt       DateTime?     // immediate revocation; auth path rejects
+  lastUsedAt      DateTime?
+  createdByUserId String
+
+  createdAt DateTime @default(now())
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User       @relation("WorkspaceTokenCreator", fields: [createdByUserId], references: [id])
+  auditLogs AuditLog[]
+
+  @@index([workspaceId, revokedAt])
+  @@index([createdByUserId])
+}
+
 // OAuth 2.0 device-authorization grant (RFC 8628).
 // The CLI hits /api/cli/device/start, gets a deviceCode + userCode, then opens
 // the user's browser to /cli/<userCode> for approval while polling
@@ -346,6 +386,11 @@ model AuditLog {
   id           String  @id @default(cuid())
   workspaceId  String?
   userId       String?
+  // Populated when the action was authenticated via a workspace service token
+  // instead of a human user session. Either userId, workspaceTokenId, or
+  // neither (system-initiated, e.g. billing webhook) can be set — never both
+  // in normal flow.
+  workspaceTokenId String?
   action       String
   resourceType String?
   resourceId   String?
@@ -355,11 +400,13 @@ model AuditLog {
 
   createdAt DateTime @default(now())
 
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace      Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspaceToken WorkspaceToken? @relation(fields: [workspaceTokenId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
   @@index([userId, createdAt])
+  @@index([workspaceTokenId, createdAt])
 }
 
 // =============================================================================

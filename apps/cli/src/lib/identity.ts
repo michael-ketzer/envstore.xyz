@@ -20,7 +20,7 @@ const KEYCHAIN_ACCOUNT = 'default';
 export type StoredIdentity = {
   identity: string; // "AGE-SECRET-KEY-1..."
   recipient: string; // "age1..."
-  source: 'keychain' | 'file';
+  source: 'keychain' | 'file' | 'env';
 };
 
 export async function generateAndStoreIdentity(): Promise<StoredIdentity> {
@@ -46,6 +46,14 @@ export async function generateAndStoreIdentity(): Promise<StoredIdentity> {
 }
 
 export async function loadIdentity(): Promise<StoredIdentity | null> {
+  // CI runners ship the private key as an env var — wins over keychain/file
+  // so a single-line workflow can pull without any local state. The value is
+  // the same `AGE-SECRET-KEY-1…` string the user-flow stores.
+  const fromEnv = process.env['ENVSTORE_IDENTITY']?.trim();
+  if (fromEnv && fromEnv.startsWith('AGE-SECRET-KEY-')) {
+    const recipient = await deriveRecipient(fromEnv);
+    return { identity: fromEnv, recipient, source: 'env' };
+  }
   if (isKeychainAvailable()) {
     try {
       const v = await keychainGet(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);

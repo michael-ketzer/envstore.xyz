@@ -32,6 +32,9 @@ export type AuditAction =
   | 'recipient.revoke'
   | 'cli-token.create'
   | 'cli-token.revoke'
+  // Workspace service tokens (CI/CD)
+  | 'workspaceToken.create'
+  | 'workspaceToken.revoke'
   // Billing — webhook-driven and user-initiated
   | 'billing.subscription.created'
   | 'billing.subscription.activated'
@@ -46,6 +49,10 @@ export type AuditAction =
 export type RecordAuditInput = {
   workspaceId?: string | null;
   userId?: string | null;
+  // Populated when a service token authenticated the request instead of a
+  // user. Set both `workspaceTokenId` and (optionally) the original
+  // `createdByUserId` of the token in metadata if you want both signals.
+  workspaceTokenId?: string | null;
   action: AuditAction;
   resourceType?: string;
   resourceId?: string;
@@ -63,6 +70,7 @@ export async function recordAudit(input: RecordAuditInput): Promise<void> {
     data: {
       workspaceId: input.workspaceId ?? null,
       userId: input.userId ?? null,
+      workspaceTokenId: input.workspaceTokenId ?? null,
       action: input.action,
       resourceType: input.resourceType ?? null,
       resourceId: input.resourceId ?? null,

@@ -12,6 +12,7 @@
   },
   "scripts": {
     "generate": "prisma generate",
+    "build": "prisma generate",
     "migrate": "dotenv -e ../../.env -e ../../.env.local -- prisma migrate dev",
     "migrate:deploy": "dotenv -e ../../.env -e ../../.env.local -- prisma migrate deploy",
     "push": "dotenv -e ../../.env -e ../../.env.local -- prisma db push",

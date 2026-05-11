@@ -9,7 +9,12 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**",
+        "bin/**"
+      ],
       "env": [
         "DATABASE_URL",
         "DIRECT_URL",

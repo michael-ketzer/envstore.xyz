@@ -1,7 +1,8 @@
 {
   "extends": "@envstore/config/tsconfig/next.json",
   "compilerOptions": {
-    "baseUrl": ".",
+    // TS 6 deprecated `baseUrl`. Paths now resolve relative to this tsconfig's
+    // directory by default, which is what we wanted from `baseUrl: "."` anyway.
     "paths": {
       "@/*": ["./src/*"]
     }

@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "moduleDetection": "force",
@@ -21,8 +21,11 @@
     "forceConsistentCasingInFileNames": true,
 
     "incremental": true,
-    "declaration": true,
-    "declarationMap": true,
+    // We don't emit .d.ts — workspace packages are consumed as TS source via
+    // Next.js's `transpilePackages`. Leaving `declaration: true` triggered TS
+    // 6's stricter portable-type checks on internal types from third-party
+    // packages (e.g. next-auth's NextAuthRequest), which we never re-export.
+    "declaration": false,
     "sourceMap": true,
     "noEmit": true
   }

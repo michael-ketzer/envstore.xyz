@@ -7,9 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  // Prisma 7: connection URLs live in `prisma.config.ts` (for migrate) and
+  // are passed to PrismaClient via the @prisma/adapter-pg constructor.
 }
 
 // =============================================================================

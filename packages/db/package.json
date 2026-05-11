@@ -21,12 +21,16 @@
     "topo": "echo 'db topo ok'"
   },
   "dependencies": {
-    "@prisma/client": "^6.1.0"
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@envstore/config": "workspace:*",
-    "dotenv-cli": "^8.0.0",
-    "prisma": "^6.1.0",
-    "typescript": "^5.7.0"
+    "@types/pg": "^8.11.10",
+    "dotenv": "^17.4.2",
+    "dotenv-cli": "^11.0.0",
+    "prisma": "^7.8.0",
+    "typescript": "^6.0.3"
   }
 }

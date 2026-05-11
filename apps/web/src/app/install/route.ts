@@ -41,16 +41,16 @@ case "$uname_m" in
 esac
 
 # --- Pick install destination --------------------------------------------------
+# Prefer a writable system bin; otherwise fall back to ~/.local/bin and remember
+# whether we need to nudge the user about PATH at the end of the install.
 INSTALL_DIR="/usr/local/bin"
+NEEDS_PATH_HINT=0
 if [ ! -w "$INSTALL_DIR" ]; then
   INSTALL_DIR="$HOME/.local/bin"
   mkdir -p "$INSTALL_DIR"
   case ":$PATH:" in
     *:"$INSTALL_DIR":*) ;;
-    *)
-      echo "envstore: \\$HOME/.local/bin is not on your PATH. Add it to your shell rc:"
-      echo "    export PATH=\\"\\$HOME/.local/bin:\\$PATH\\""
-      ;;
+    *) NEEDS_PATH_HINT=1 ;;
   esac
 fi
 
@@ -73,6 +73,32 @@ chmod +x "$TMP"
 mv "$TMP" "$INSTALL_DIR/$BINARY"
 
 echo "envstore: installed. Run \\\`envstore login\\\` to get started."
+
+# --- PATH hint (only if we fell back to ~/.local/bin and it isn't on PATH) ----
+# Detect the user's shell so we can name the exact rc file. \${SHELL:-sh} is
+# escaped here because this whole script is inside a JS template literal —
+# we want the shell to evaluate it, not the JS parser.
+if [ "$NEEDS_PATH_HINT" = "1" ]; then
+  USER_SHELL=$(basename "\${SHELL:-sh}")
+  case "$USER_SHELL" in
+    zsh)  RC_FILE="\\$HOME/.zshrc" ;;
+    bash) RC_FILE="\\$HOME/.bashrc" ;;
+    fish) RC_FILE="\\$HOME/.config/fish/config.fish" ;;
+    *)    RC_FILE="your shell's rc file" ;;
+  esac
+  echo ""
+  echo "────────────────────────────────────────────────────────────────"
+  echo "  Heads up: \\$HOME/.local/bin is not on your PATH."
+  echo "  Run this so 'envstore' is found in new shells:"
+  echo ""
+  if [ "$USER_SHELL" = "fish" ]; then
+    echo "    fish_add_path \\$HOME/.local/bin"
+  else
+    echo "    echo 'export PATH=\\"\\$HOME/.local/bin:\\$PATH\\"' >> $RC_FILE"
+    echo "    source $RC_FILE"
+  fi
+  echo "────────────────────────────────────────────────────────────────"
+fi
 `;
 }
 

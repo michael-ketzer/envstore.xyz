@@ -122,15 +122,25 @@ export async function getExportableIdentity(): Promise<{ stored: StoredIdentity;
 
 // Parse + store an identity from arbitrary text (file contents, clipboard,
 // stdin). Liberal on input — the user may have pasted comments, surrounding
-// whitespace, or multiple lines — we look for the first `AGE-SECRET-KEY-` line.
+// whitespace, or multiple lines. We first try a strict line-start match
+// (cleanest case: a real export file), then fall back to a regex anywhere
+// in the text. The fallback matters because password managers (Apple
+// Passwords in particular) often collapse multi-line content onto a single
+// line, so the key ends up mid-line after the comment header.
 export async function importIdentityFromText(text: string): Promise<StoredIdentity> {
-  const identity = text
+  let identity = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .find((l) => l.startsWith('AGE-SECRET-KEY-'));
   if (!identity) {
+    // age bech32 keys are uppercase A-Z + digits after the AGE-SECRET-KEY-
+    // prefix. Take the whole token wherever it appears.
+    const match = text.match(/AGE-SECRET-KEY-[A-Z0-9]+/);
+    if (match) identity = match[0];
+  }
+  if (!identity) {
     throw new Error(
-      'No age secret key found in the input. Expected a line beginning with `AGE-SECRET-KEY-`.',
+      'No age secret key found in the input. Expected `AGE-SECRET-KEY-…` somewhere in the text.',
     );
   }
   const recipient = await deriveRecipient(identity);

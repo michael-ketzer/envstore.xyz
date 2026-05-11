@@ -38,10 +38,14 @@ After each `git tag v0.x.y && git push --tags` on `envstore.xyz`:
 
 1. Wait for the release workflow to finish and attach the binaries +
    `*.sha256` files to the GitHub release.
-2. Update `Formula/envstore.rb`:
-   - `version "0.x.y"` (without the leading `v`)
-   - Replace each `SHA256_*` placeholder with the value from the matching
-     `.sha256` asset.
+2. Render the formula by running the helper from this repo (it fetches the
+   sha256 values from the GitHub release and substitutes the template):
+
+   ```sh
+   bash scripts/homebrew/render-formula.sh 0.x.y \
+     > /path/to/homebrew-envstore/Formula/envstore.rb
+   ```
+
 3. Commit + push to `homebrew-envstore`.
 
 Existing users get the upgrade with `brew upgrade envstore` — no re-tap needed.

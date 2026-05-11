@@ -1,5 +1,7 @@
 // `envstore whoami` — confirms the token works and prints user + workspace summary.
 
+import { PERSONAL_WORKSPACE_URL_SLUG } from '@envstore/shared';
+
 import { makeClient } from '../lib/api';
 import type { Args } from '../lib/args';
 import { resolveApiUrl, findProjectConfig } from '../lib/config';
@@ -32,9 +34,12 @@ export async function whoami(_args: Args): Promise<void> {
   if (me.workspaces.length > 0) {
     heading('Workspaces');
     for (const ws of me.workspaces) {
+      // Personal workspaces are always routed via /me; surface that here
+      // instead of the auto-generated DB slug (typically the email local-part).
+      const displaySlug = ws.type === 'PERSONAL' ? PERSONAL_WORKSPACE_URL_SLUG : ws.slug;
       const type = c.gray(`(${ws.type.toLowerCase()})`);
       const role = c.gray(`[${ws.role.toLowerCase()}]`);
-      console.log(`  ${c.cyan(ws.slug)} ${ws.name} ${type} ${role}`);
+      console.log(`  ${c.cyan(displaySlug)} ${ws.name} ${type} ${role}`);
     }
     console.log();
   }

@@ -5,6 +5,8 @@
 //   envstore ls projects [ws] → lists projects in workspace (defaults to linked one)
 //   envstore ls envs [ws/proj]→ lists envs
 
+import { PERSONAL_WORKSPACE_URL_SLUG } from '@envstore/shared';
+
 import { makeClient } from '../lib/api';
 import type { Args } from '../lib/args';
 import { findProjectConfig, resolveApiUrl } from '../lib/config';
@@ -83,9 +85,10 @@ function printWorkspaces(list: MeWorkspace[]): void {
   }
   heading('Workspaces');
   for (const ws of list) {
+    const displaySlug = ws.type === 'PERSONAL' ? PERSONAL_WORKSPACE_URL_SLUG : ws.slug;
     const type = c.gray(`(${ws.type.toLowerCase()})`);
     const role = c.gray(`[${ws.role.toLowerCase()}]`);
-    console.log(`  ${c.cyan(ws.slug.padEnd(20))} ${ws.name} ${type} ${role}`);
+    console.log(`  ${c.cyan(displaySlug.padEnd(20))} ${ws.name} ${type} ${role}`);
   }
 }
 

@@ -5,12 +5,16 @@
 //   - Auto-picks the only workspace if you have exactly one (skip the prompt).
 //   - If the workspace has no projects yet, jumps straight to "create project".
 //   - Pre-fills name + slug from package.json `name` field when available.
+//   - Detects monorepos (pnpm-workspace.yaml / package.json#workspaces /
+//     turbo.json), scans every .env-style file, and offers to set them all up
+//     in one go as a multi-file envstore.json.
 //
 // Flags:
 //   --workspace <slug>   skip workspace selection; create if doesn't exist
 //   --project <slug>     skip project selection; create if doesn't exist
 //   --name <text>        explicit display name for new resources
 //   --force              overwrite existing envstore.json
+//   --single             force the single-project flow even in a detected monorepo
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -21,12 +25,20 @@ import {
   slugify,
   validateSlug,
   validateWorkspaceSlug,
+  type EnvstoreFileEntry,
 } from '@envstore/shared';
 
 import { makeClient } from '../lib/api';
 import type { Args } from '../lib/args';
 import { findProjectConfig, resolveApiUrl, writeProjectConfig } from '../lib/config';
 import { CliError } from '../lib/errors';
+import {
+  describeMarkers,
+  detectMonorepoMarkers,
+  hasAnyMonorepoMarker,
+  scanEnvFiles,
+  suggestProjectSlugForFile,
+} from '../lib/monorepo';
 import { c, info, muted, success } from '../lib/output';
 import { askChoice, askConfirm, askText, requireTty } from '../lib/prompt';
 import type { MeResponse, MeWorkspace } from '../lib/me';
@@ -46,6 +58,30 @@ export async function init(args: Args): Promise<void> {
   const apiUrl = await resolveApiUrl();
   const client = makeClient(apiUrl);
   const me = await client.get<MeResponse>('/api/v1/me');
+
+  // Monorepo detection: any of the three common markers + multiple env files.
+  // --single bypasses entirely, so users with an unusual layout can still
+  // fall through to the per-directory flow.
+  if (!args.flags['single']) {
+    const markers = await detectMonorepoMarkers(cwd);
+    if (hasAnyMonorepoMarker(markers)) {
+      const envFiles = await scanEnvFiles(cwd);
+      if (envFiles.length >= 2) {
+        const proceeded = await maybeInitMonorepo({
+          client,
+          me,
+          cwd,
+          apiUrl,
+          markers: describeMarkers(markers),
+          envFiles,
+          args,
+        });
+        if (proceeded) return;
+        // User declined → fall through to single-project flow.
+      }
+    }
+  }
+
   const suggestion = await suggestFromPackageJson(cwd);
 
   // ----- Workspace -----
@@ -80,6 +116,95 @@ export async function init(args: Args): Promise<void> {
   console.log();
   muted('Commit this file. It contains no secrets — just routing info.');
   muted(`Next: \`envstore identity init\` (if you haven't yet), then \`envstore push .env\`.`);
+}
+
+// =============================================================================
+// Monorepo init flow
+// =============================================================================
+
+// Walks the user through registering every env file in a monorepo under a
+// single root envstore.json. Returns true if it actually wrote a config
+// (user proceeded), false if they declined (caller falls back to single).
+async function maybeInitMonorepo(opts: {
+  client: ReturnType<typeof makeClient>;
+  me: MeResponse;
+  cwd: string;
+  apiUrl: string;
+  markers: string;
+  envFiles: string[];
+  args: Args;
+}): Promise<boolean> {
+  const { client, me, cwd, apiUrl, markers, envFiles, args } = opts;
+  requireTty();
+  info(`Detected monorepo (${markers}).`);
+  info(`Found ${envFiles.length} env files:`);
+  for (const f of envFiles) console.log(`  ${c.gray(f)}`);
+  console.log();
+  if (!askConfirm('Set them all up as separate projects in one envstore.json?', true)) {
+    return false;
+  }
+
+  // Resolve workspace ONCE for all files. Reuses the single-init helpers.
+  const workspace = await resolveWorkspace(
+    client,
+    me,
+    stringFlag(args.flags['workspace']),
+    args,
+  );
+
+  // Fetch existing projects ONCE so we can either pick an existing slug or
+  // create a new one without re-listing per file.
+  let projects = await client.get<ProjectSummary[]>(
+    `/api/v1/workspaces/${workspace.slug}/projects`,
+  );
+
+  const entries: EnvstoreFileEntry[] = [];
+  for (const filePath of envFiles) {
+    const suggestion = slugify(await suggestProjectSlugForFile(cwd, filePath));
+    console.log();
+    info(`${c.cyan(filePath)}`);
+    const projectSlug = askText('  Project slug', {
+      default: suggestion || 'project',
+      required: true,
+      validate: (v) => {
+        const r = validateSlug(v);
+        return r.ok ? null : r.reason;
+      },
+    });
+
+    // Create the project if it doesn't exist yet in this workspace.
+    if (!projects.some((p) => p.slug === projectSlug)) {
+      const created = await createProject(
+        client,
+        workspace.slug,
+        projectSlug,
+        projectSlug, // use slug as default display name; users can rename later
+      );
+      projects = [...projects, created];
+    }
+
+    entries.push({ path: filePath, project: projectSlug });
+  }
+
+  // ----- Write the multi-config envstore.json -----
+  const target = join(cwd, ENVSTORE_CONFIG_FILENAME);
+  const content = renderEnvstoreConfig({
+    workspace: workspace.slug,
+    files: entries,
+    schemaUrl: `${apiUrl}/schema/envstore.json`,
+  });
+  await writeProjectConfig(target, content);
+
+  console.log();
+  success(`Wrote ${ENVSTORE_CONFIG_FILENAME} (${entries.length} files).`);
+  console.log(`  ${c.gray('workspace:')} ${c.cyan(workspace.slug)}`);
+  for (const e of entries) {
+    console.log(`  ${c.cyan(e.path)} → ${e.project}`);
+  }
+  console.log();
+  muted('Commit this file. It contains no secrets — just routing info.');
+  muted('Next: `envstore identity init` (if you haven\'t yet), then `envstore push` to upload all of them.');
+  return true;
 }
 
 // =============================================================================

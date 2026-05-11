@@ -56,6 +56,9 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['push --env production', 'Filter by configured environment'],
       ['pull', 'Pull every file in envstore.json'],
       ['pull apps/web/.env.local', 'Pull exactly that one file'],
+      ['sync', 'Reconcile envstore.json with the filesystem (add new files / drop missing)'],
+      ['sync --dry-run', 'Preview the diff without writing'],
+      ['sync --yes [--prune]', 'Non-interactive add (and remove with --prune)'],
     ],
   },
   {

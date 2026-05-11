@@ -19,6 +19,7 @@ import { logout } from './commands/logout';
 import { ls } from './commands/ls';
 import { pull } from './commands/pull';
 import { push } from './commands/push';
+import { sync } from './commands/sync';
 import { whoami } from './commands/whoami';
 
 type Handler = (args: Args) => Promise<void>;
@@ -34,6 +35,7 @@ const COMMANDS: Record<string, Handler> = {
   list: ls, // alias
   push,
   pull,
+  sync,
   licenses,
   help,
 };

@@ -37,7 +37,7 @@ const SECTIONS: ReadonlyArray<Section> = [
     ],
   },
   {
-    title: 'Push / pull',
+    title: 'Push / pull (single project)',
     entries: [
       ['push [file]', 'Encrypt + upload (default file: .env). Prompts for env when bare .env.'],
       ['push .env.production', 'Auto-detects environment from filename'],
@@ -45,6 +45,17 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['pull [env]', 'Download + decrypt (defaults: env=development, file=.env.<env>)'],
       ['pull staging --out .env.local', 'Custom output path'],
       ['pull staging --version 3', 'Pull a specific historical version'],
+    ],
+  },
+  {
+    title: 'Push / pull (monorepo — files[] in envstore.json)',
+    entries: [
+      ['push', 'Encrypt + upload every file in envstore.json'],
+      ['push apps/web', 'Path-prefix filter — push only files under apps/web'],
+      ['push --project shinra-web', 'Filter by configured project slug'],
+      ['push --env production', 'Filter by configured environment'],
+      ['pull', 'Pull every file in envstore.json'],
+      ['pull apps/web/.env.local', 'Pull exactly that one file'],
     ],
   },
   {

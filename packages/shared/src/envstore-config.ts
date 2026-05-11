@@ -4,6 +4,18 @@
 //
 // Read by the CLI on every `envstore push` / `pull`. Displayed in the web
 // dashboard's "Connect" panel so users can copy it into their repo.
+//
+// Two shapes are accepted on read:
+//
+//   Flat (single-file, legacy):
+//   { workspace, project, defaultEnv?, apiUrl? }
+//
+//   Multi (monorepo):
+//   { workspace, files: [{ path, project, environment? }, ...], apiUrl? }
+//
+// Both are emitted in different scenarios — `envstore init` writes the flat
+// form for a single-project repo and the multi form for a monorepo. Loaders
+// keep both supported indefinitely; existing users never have to migrate.
 
 import { z } from 'zod';
 
@@ -14,7 +26,20 @@ import { workspaceSlugSchema } from './schemas/workspace';
 export const ENVSTORE_CONFIG_VERSION = 1;
 export const ENVSTORE_CONFIG_FILENAME = 'envstore.json';
 
-export const envstoreConfigSchema = z.object({
+// Per-file entry inside the `files` array.
+// `path` is relative to the directory holding this envstore.json.
+export const envstoreFileEntrySchema = z.object({
+  path: z.string().min(1),
+  project: projectSlugSchema,
+  environment: environmentSlugSchema.optional(),
+});
+
+export type EnvstoreFileEntry = z.infer<typeof envstoreFileEntrySchema>;
+
+// Flat (legacy / single-project) shape — workspace + project at the top level,
+// no path binding. The CLI's push/pull commands take the filename as an arg
+// (defaulting to `.env`).
+const flatConfigSchema = z.object({
   $schema: z.string().optional(),
   version: z.literal(ENVSTORE_CONFIG_VERSION).default(ENVSTORE_CONFIG_VERSION),
   workspace: workspaceSlugSchema,
@@ -24,25 +49,77 @@ export const envstoreConfigSchema = z.object({
   apiUrl: z.string().url().optional(),
 });
 
+// Multi (monorepo) shape — workspace at the top, a `files[]` array binding
+// each on-disk path to a project (and optionally an environment).
+const multiConfigSchema = z.object({
+  $schema: z.string().optional(),
+  version: z.literal(ENVSTORE_CONFIG_VERSION).default(ENVSTORE_CONFIG_VERSION),
+  workspace: workspaceSlugSchema,
+  files: z.array(envstoreFileEntrySchema).min(1),
+  apiUrl: z.string().url().optional(),
+});
+
+// Discriminated by presence of `files`. zod's union picks the right one.
+export const envstoreConfigSchema = z.union([multiConfigSchema, flatConfigSchema]);
+
+export type EnvstoreConfigFlat = z.infer<typeof flatConfigSchema>;
+export type EnvstoreConfigMulti = z.infer<typeof multiConfigSchema>;
 export type EnvstoreConfig = z.infer<typeof envstoreConfigSchema>;
 
-export type RenderEnvstoreConfigInput = {
-  workspace: string;
-  project: string;
-  defaultEnv?: string;
-  apiUrl?: string;
-  schemaUrl?: string;
-};
+export function isMultiConfig(cfg: EnvstoreConfig): cfg is EnvstoreConfigMulti {
+  return 'files' in cfg;
+}
+
+// Normalize either shape into a single `files[]` view. Useful for code paths
+// (push/pull iteration, display) that don't want to branch on the shape.
+// For flat configs the synthesized entry uses `.env` as the default path —
+// callers that need to honor a user-supplied filename override should branch
+// on `isMultiConfig` instead.
+export function normalizeToFiles(cfg: EnvstoreConfig): EnvstoreFileEntry[] {
+  if (isMultiConfig(cfg)) return cfg.files;
+  return [
+    {
+      path: '.env',
+      project: cfg.project,
+      environment: cfg.defaultEnv,
+    },
+  ];
+}
+
+export type RenderEnvstoreConfigInput =
+  | {
+      workspace: string;
+      project: string;
+      defaultEnv?: string;
+      apiUrl?: string;
+      schemaUrl?: string;
+    }
+  | {
+      workspace: string;
+      files: EnvstoreFileEntry[];
+      apiUrl?: string;
+      schemaUrl?: string;
+    };
 
 // Produce the exact JSON string we ship in the dashboard's "Connect" panel and
 // in `envstore init`. Stable key order, two-space indent, trailing newline.
+// Picks the flat form when given a single project, the multi form when given
+// a files[] array.
 export function renderEnvstoreConfig(input: RenderEnvstoreConfigInput): string {
   const obj: Record<string, unknown> = {};
   if (input.schemaUrl) obj.$schema = input.schemaUrl;
   obj.version = ENVSTORE_CONFIG_VERSION;
   obj.workspace = input.workspace;
-  obj.project = input.project;
-  if (input.defaultEnv) obj.defaultEnv = input.defaultEnv;
+  if ('files' in input) {
+    obj.files = input.files.map((f) => {
+      const entry: Record<string, unknown> = { path: f.path, project: f.project };
+      if (f.environment) entry.environment = f.environment;
+      return entry;
+    });
+  } else {
+    obj.project = input.project;
+    if (input.defaultEnv) obj.defaultEnv = input.defaultEnv;
+  }
   if (input.apiUrl) obj.apiUrl = input.apiUrl;
   return `${JSON.stringify(obj, null, 2)}\n`;
 }

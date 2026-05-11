@@ -70,6 +70,9 @@ export async function GET(req: Request, ctx: Ctx) {
           recipientsHash: true,
         },
       },
+      // Workspace type lets the CLI display "me/<project>" for personal
+      // workspaces in its success message.
+      project: { select: { workspace: { select: { type: true } } } },
     },
   });
   if (!environment) return notFound('Environment not found.');
@@ -116,6 +119,7 @@ export async function GET(req: Request, ctx: Ctx) {
     versionId: version.id,
     version: version.version,
     environmentSlug: environment.slug,
+    workspaceType: environment.project.workspace.type,
     ciphertextSize: version.ciphertextSize,
     ciphertextSha256: bytesToHex(new Uint8Array(version.ciphertextSha256)),
     recipientsHash: bytesToHex(new Uint8Array(version.recipientsHash)),

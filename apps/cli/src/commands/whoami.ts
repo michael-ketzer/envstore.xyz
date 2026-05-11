@@ -1,6 +1,6 @@
 // `envstore whoami` — confirms the token works and prints user + workspace summary.
 
-import { PERSONAL_WORKSPACE_URL_SLUG } from '@envstore/shared';
+import { PERSONAL_WORKSPACE_URL_SLUG, isMultiConfig } from '@envstore/shared';
 
 import { makeClient } from '../lib/api';
 import type { Args } from '../lib/args';
@@ -45,9 +45,19 @@ export async function whoami(_args: Args): Promise<void> {
   }
 
   if (project) {
-    heading('Linked project');
-    console.log(`  ${project.config.workspace}/${project.config.project}`);
-    console.log(`  ${c.gray('config:')} ${project.path}`);
+    if (isMultiConfig(project.config)) {
+      heading(`Linked monorepo (${project.config.files.length} files)`);
+      console.log(`  ${c.gray('workspace:')} ${project.config.workspace}`);
+      for (const f of project.config.files) {
+        const envSuffix = f.environment ? ` ${c.gray(`(${f.environment})`)}` : '';
+        console.log(`  ${c.cyan(f.path)} → ${f.project}${envSuffix}`);
+      }
+      console.log(`  ${c.gray('config:')} ${project.path}`);
+    } else {
+      heading('Linked project');
+      console.log(`  ${project.config.workspace}/${project.config.project}`);
+      console.log(`  ${c.gray('config:')} ${project.path}`);
+    }
   } else {
     muted('No envstore.json found in cwd or parents.');
     muted('Run `envstore link` or `envstore init` here to connect this directory.');

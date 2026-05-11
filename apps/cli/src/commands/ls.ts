@@ -5,7 +5,7 @@
 //   envstore ls projects [ws] → lists projects in workspace (defaults to linked one)
 //   envstore ls envs [ws/proj]→ lists envs
 
-import { PERSONAL_WORKSPACE_URL_SLUG } from '@envstore/shared';
+import { PERSONAL_WORKSPACE_URL_SLUG, isMultiConfig } from '@envstore/shared';
 
 import { makeClient } from '../lib/api';
 import type { Args } from '../lib/args';
@@ -60,7 +60,21 @@ export async function ls(args: Args): Promise<void> {
       projSlug = parts[1]!;
     } else if (project) {
       wsSlug = project.config.workspace;
-      projSlug = project.config.project;
+      if (isMultiConfig(project.config)) {
+        // Multi config has many projects — caller must pick one.
+        if (project.config.files.length === 1) {
+          projSlug = project.config.files[0]!.project;
+        } else {
+          throw new CliError(
+            'This envstore.json lists multiple files. Specify which project to list envs for.',
+            {
+              hint: `Try: envstore ls envs ${wsSlug}/<project>  (configured: ${project.config.files.map((f) => f.project).join(', ')})`,
+            },
+          );
+        }
+      } else {
+        projSlug = project.config.project;
+      }
     } else {
       throw new CliError('No envstore.json here.', {
         hint: 'Run `envstore link` first, or pass `envstore ls envs workspace/project`.',

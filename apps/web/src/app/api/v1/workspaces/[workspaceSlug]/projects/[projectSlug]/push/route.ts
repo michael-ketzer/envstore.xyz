@@ -180,6 +180,9 @@ export async function POST(req: Request, ctx: Ctx) {
     versionId: created.id,
     version: created.version,
     environmentSlug: environment.slug,
+    // Surfaced so the CLI can display "me/<project>" for personal workspaces
+    // instead of the auto-generated DB slug (typically the email local-part).
+    workspaceType: project.workspace.type,
     uploadUrl: presigned.url,
     requiredHeaders: presigned.requiredHeaders,
     expiresIn: presigned.expiresIn,

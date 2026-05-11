@@ -1,34 +1,48 @@
-// `envstore push [file]` — encrypt + upload a local env file.
+// `envstore push [file]` — encrypt + upload one or more local env files.
 //
-// Flow:
-//   1. Read the file (default `.env`).
-//   2. Text-only check + size cap (refuses binaries and >1MB plaintext).
-//   3. Resolve target environment:
-//        - --env <slug>: explicit, wins.
-//        - filename like `.env.production`: silent auto-detect.
-//        - bare `.env` (or `.env.local`): PROMPT with default `development`.
-//   4. Fetch workspace recipients, encrypt with age.
-//   5. POST /push -> presigned PUT URL.
-//   6. PUT the ciphertext directly to R2.
-//   7. POST /push/<versionId>/finalize.
+// Behavior depends on the envstore.json shape:
+//
+//   Flat config (legacy single-project):
+//     envstore push                  → push .env (default) to the configured project
+//     envstore push .env.production  → push .env.production to the same project
+//
+//   Multi config (monorepo, `files: [...]` array):
+//     envstore push                          → push every file in the config
+//     envstore push apps/web                 → filter by path prefix
+//     envstore push apps/web/.env.local      → filter by exact file
+//     envstore push --project foo            → filter by project slug
+//     envstore push --env production         → filter by environment
+//     (filters AND together)
+//
+// Per-file flow (identical in both modes):
+//   1. Read the file (text + size guards).
+//   2. Resolve the target environment.
+//   3. Fetch workspace recipients, encrypt with age.
+//   4. POST /push → presigned PUT URL.
+//   5. PUT ciphertext directly to R2.
+//   6. POST /push/<versionId>/finalize.
 
 import { readFile } from 'node:fs/promises';
-import { basename, isAbsolute, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 
 import { encryptForRecipients } from '@envstore/crypto/age';
 import { recipientsHashHex, sha256Hex } from '@envstore/crypto/hash';
 import {
   LIMITS,
+  PERSONAL_WORKSPACE_URL_SLUG,
   checkPlaintextSize,
   detectEnvironmentFromFilename,
+  isMultiConfig,
   isText,
   validateSlug,
+  type EnvstoreFileEntry,
 } from '@envstore/shared';
 
-import { makeClient } from '../lib/api';
+import { makeClient, type ApiClient } from '../lib/api';
 import type { Args } from '../lib/args';
 import { findProjectConfig, resolveApiUrl } from '../lib/config';
 import { ApiError, CliError } from '../lib/errors';
+import { matchFiles } from '../lib/files-filter';
 import { c, info, muted, success, warn } from '../lib/output';
 import { askConfirm, askText, requireTty } from '../lib/prompt';
 
@@ -44,6 +58,7 @@ type PushInitResponse = {
   versionId: string;
   version: number;
   environmentSlug: string;
+  workspaceType: 'PERSONAL' | 'TEAM';
   uploadUrl: string;
   requiredHeaders: Record<string, string>;
   expiresIn: number;
@@ -52,52 +67,18 @@ type PushInitResponse = {
 type RecipientsResponse = { recipients: Recipient[] };
 
 export async function push(args: Args): Promise<void> {
-  // ----- 1. Project config -----
   const cfg = await findProjectConfig();
   if (!cfg) {
     throw new CliError('No envstore.json found here or in any parent directory.', {
       hint: 'Run `envstore init` in your project root first.',
     });
   }
-  const { workspace, project } = cfg.config;
 
-  // ----- 2. Read file -----
-  const fileArg = args.positional[0] ?? '.env';
-  const filePath = isAbsolute(fileArg) ? fileArg : resolve(process.cwd(), fileArg);
-  let plaintext: Uint8Array;
-  try {
-    plaintext = await readFile(filePath);
-  } catch (err) {
-    throw new CliError(`Cannot read ${fileArg}: ${(err as Error).message}`);
-  }
-
-  // ----- 3. Text + size guards -----
-  const text = isText(plaintext);
-  if (!text.ok) {
-    throw new CliError(
-      `${fileArg} doesn't look like text (${text.reason}). envstore only accepts text files.`,
-    );
-  }
-  const sizeCheck = checkPlaintextSize(plaintext.byteLength);
-  if (sizeCheck.level === 'too-large') {
-    throw new CliError(
-      `${fileArg} is ${plaintext.byteLength} bytes; cap is ${LIMITS.maxPlaintextBytes} bytes.`,
-    );
-  }
-  if (sizeCheck.level === 'soft-warn') {
-    requireTty();
-    warn(
-      `${fileArg} is ${plaintext.byteLength} bytes — unusually large for an env file.`,
-    );
-    if (!askConfirm('Push anyway?', false)) throw new CliError('Cancelled.');
-  }
-
-  // ----- 4. Resolve target environment -----
-  const envSlug = await resolveTargetEnv(fileArg, args);
-
-  // ----- 5. Recipients -----
   const apiUrl = await resolveApiUrl({ project: cfg.config });
   const client = makeClient(apiUrl);
+  const { workspace } = cfg.config;
+
+  // Recipients are workspace-wide, so fetch once and reuse across files.
   const recipientsResponse = await client.get<RecipientsResponse>(
     `/api/v1/workspaces/${workspace}/recipients`,
   );
@@ -111,38 +92,130 @@ export async function push(args: Args): Promise<void> {
       },
     );
   }
-  const recipientStrings = recipientsResponse.recipients.map((r) => r.recipient);
-  const dedupedRecipients = Array.from(new Set(recipientStrings));
+  const recipients = Array.from(
+    new Set(recipientsResponse.recipients.map((r) => r.recipient)),
+  );
 
-  // ----- 6. Encrypt -----
+  if (isMultiConfig(cfg.config)) {
+    const configDir = dirname(cfg.path);
+    const matches = matchFiles(
+      cfg.config.files,
+      {
+        path: typeof args.positional[0] === 'string' ? args.positional[0] : undefined,
+        project: stringFlag(args.flags['project']),
+        env: stringFlag(args.flags['env']),
+      },
+      configDir,
+    );
+    if (matches.length === 0) {
+      throw new CliError('No matching files in envstore.json.', {
+        hint: `Configured files: ${cfg.config.files.map((f) => f.path).join(', ')}`,
+      });
+    }
+    for (const [i, file] of matches.entries()) {
+      if (matches.length > 1) {
+        info(c.gray(`\n[${i + 1}/${matches.length}] ${file.path}`));
+      }
+      const filePath = resolve(configDir, file.path);
+      const envSlug = await resolveTargetEnv(filePath, args, file.environment);
+      await pushOneFile({
+        client,
+        workspace,
+        projectSlug: file.project,
+        filePath,
+        displayPath: file.path,
+        envSlug,
+        recipients,
+        comment: stringFlag(args.flags['comment']),
+      });
+    }
+    if (matches.length > 1) {
+      success(`Pushed ${matches.length}/${matches.length} files.`);
+    }
+    return;
+  }
+
+  // ----- Flat (legacy) path: positional[0] is a file path, single project -----
+  const fileArg = args.positional[0] ?? '.env';
+  const filePath = isAbsolute(fileArg) ? fileArg : resolve(process.cwd(), fileArg);
+  const envSlug = await resolveTargetEnv(filePath, args, undefined);
+  await pushOneFile({
+    client,
+    workspace,
+    projectSlug: cfg.config.project,
+    filePath,
+    displayPath: relative(process.cwd(), filePath) || basename(filePath),
+    envSlug,
+    recipients,
+    comment: stringFlag(args.flags['comment']),
+  });
+}
+
+async function pushOneFile(args: {
+  client: ApiClient;
+  workspace: string;
+  projectSlug: string;
+  filePath: string;
+  displayPath: string;
+  envSlug: string;
+  recipients: string[];
+  comment?: string;
+}): Promise<void> {
+  const { client, workspace, projectSlug, filePath, displayPath, envSlug, recipients, comment } =
+    args;
+
+  let plaintext: Uint8Array;
+  try {
+    plaintext = await readFile(filePath);
+  } catch (err) {
+    throw new CliError(`Cannot read ${displayPath}: ${(err as Error).message}`);
+  }
+
+  const text = isText(plaintext);
+  if (!text.ok) {
+    throw new CliError(
+      `${displayPath} doesn't look like text (${text.reason}). envstore only accepts text files.`,
+    );
+  }
+  const sizeCheck = checkPlaintextSize(plaintext.byteLength);
+  if (sizeCheck.level === 'too-large') {
+    throw new CliError(
+      `${displayPath} is ${plaintext.byteLength} bytes; cap is ${LIMITS.maxPlaintextBytes} bytes.`,
+    );
+  }
+  if (sizeCheck.level === 'soft-warn') {
+    requireTty();
+    warn(
+      `${displayPath} is ${plaintext.byteLength} bytes — unusually large for an env file.`,
+    );
+    if (!askConfirm('Push anyway?', false)) throw new CliError('Cancelled.');
+  }
+
   info(
-    `Encrypting ${c.cyan(basename(filePath))} to ${dedupedRecipients.length} recipient${
-      dedupedRecipients.length === 1 ? '' : 's'
+    `Encrypting ${c.cyan(displayPath)} to ${recipients.length} recipient${
+      recipients.length === 1 ? '' : 's'
     }…`,
   );
-  const ciphertext = await encryptForRecipients(plaintext, dedupedRecipients);
+  const ciphertext = await encryptForRecipients(plaintext, recipients);
   if (ciphertext.byteLength > LIMITS.maxCiphertextBytes) {
     throw new CliError(
       `Ciphertext is ${ciphertext.byteLength} bytes; server cap is ${LIMITS.maxCiphertextBytes}.`,
     );
   }
   const ciphertextSha256 = await sha256Hex(ciphertext);
-  const recipientsHash = await recipientsHashHex(dedupedRecipients);
+  const recipientsHash = await recipientsHashHex(recipients);
 
-  // ----- 7. Init push (auto-creates env if needed) -----
   const init = await client.post<PushInitResponse>(
-    `/api/v1/workspaces/${workspace}/projects/${project}/push`,
+    `/api/v1/workspaces/${workspace}/projects/${projectSlug}/push`,
     {
       env: envSlug,
       ciphertextSize: ciphertext.byteLength,
       ciphertextSha256,
       recipientsHash,
-      comment:
-        typeof args.flags['comment'] === 'string' ? args.flags['comment'] : undefined,
+      comment,
     },
   );
 
-  // ----- 8. Upload ciphertext to R2 -----
   info(`Uploading v${init.version} (${ciphertext.byteLength} bytes)…`);
   const putRes = await fetch(init.uploadUrl, {
     method: 'PUT',
@@ -150,36 +223,45 @@ export async function push(args: Args): Promise<void> {
     headers: init.requiredHeaders,
   });
   if (!putRes.ok) {
-    const text = await putRes.text().catch(() => '');
+    const errText = await putRes.text().catch(() => '');
     throw new ApiError(
-      `R2 upload failed: HTTP ${putRes.status}${text ? ` — ${text.slice(0, 120)}` : ''}`,
+      `R2 upload failed: HTTP ${putRes.status}${errText ? ` — ${errText.slice(0, 120)}` : ''}`,
       putRes.status,
     );
   }
 
-  // ----- 9. Finalize -----
   await client.post(
-    `/api/v1/workspaces/${workspace}/projects/${project}/push/${init.versionId}/finalize`,
+    `/api/v1/workspaces/${workspace}/projects/${projectSlug}/push/${init.versionId}/finalize`,
     {},
   );
 
+  const displayWorkspace =
+    init.workspaceType === 'PERSONAL' ? PERSONAL_WORKSPACE_URL_SLUG : workspace;
   success(
-    `Pushed ${c.cyan(`${workspace}/${project}`)} → ${c.cyan(init.environmentSlug)} (v${init.version}).`,
+    `Pushed ${c.cyan(`${displayWorkspace}/${projectSlug}`)} → ${c.cyan(init.environmentSlug)} (v${init.version}).`,
   );
-  muted(`On another machine: \`envstore pull${init.environmentSlug === 'development' ? '' : ` ${init.environmentSlug}`}\``);
+  muted(
+    `On another machine: \`envstore pull${init.environmentSlug === 'development' ? '' : ` ${init.environmentSlug}`}\``,
+  );
 }
 
-async function resolveTargetEnv(file: string, args: Args): Promise<string> {
-  // Explicit --env wins.
-  const flag = typeof args.flags['env'] === 'string' ? args.flags['env'] : undefined;
+// File path is now an ABSOLUTE path; we look at its basename. `preset` is the
+// environment configured in envstore.json (multi mode); it wins over filename
+// detection but not over an explicit --env flag.
+async function resolveTargetEnv(
+  filePath: string,
+  args: Args,
+  preset: string | undefined,
+): Promise<string> {
+  const flag = stringFlag(args.flags['env']);
   if (flag) {
     const r = validateSlug(flag);
     if (!r.ok) throw new CliError(`--env ${flag}: ${r.reason}`);
     return flag;
   }
+  if (preset) return preset;
 
-  const base = basename(file);
-  // Bare `.env` or `.env.local` (override file with no env qualifier) → prompt.
+  const base = basename(filePath);
   if (base === '.env' || base === '.env.local') {
     requireTty();
     info(`${c.cyan(base)} doesn't name an environment.`);
@@ -193,11 +275,9 @@ async function resolveTargetEnv(file: string, args: Args): Promise<string> {
     });
   }
 
-  // `.env.<name>` → silent auto-detect.
-  const det = detectEnvironmentFromFilename(file);
+  const det = detectEnvironmentFromFilename(filePath);
   if (det.detected) return det.slug;
 
-  // Fallback: prompt.
   requireTty();
   return askText('Push to which environment?', {
     default: 'development',
@@ -208,3 +288,8 @@ async function resolveTargetEnv(file: string, args: Args): Promise<string> {
     },
   });
 }
+
+function stringFlag(v: unknown): string | undefined {
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+

@@ -129,9 +129,9 @@ export async function init(args: Args): Promise<void> {
 // Walks the user through registering every env file in a monorepo. Each
 // .env file becomes its own envstore project (so `apps/web/.env.local`
 // becomes the `web` project, `apps/admin/.env` becomes `admin`, etc.) and
-// all projects are tagged with the same `group` so the dashboard renders
-// them inside a single folder named after the monorepo. Returns true if
-// it wrote a config (user proceeded), false if they declined.
+// all projects share the same ProjectGroup so the dashboard renders them
+// together under one group page. Returns true if it wrote a config (user
+// proceeded), false if they declined.
 async function maybeInitMonorepo(opts: {
   client: ReturnType<typeof makeClient>;
   me: MeResponse;
@@ -149,7 +149,7 @@ async function maybeInitMonorepo(opts: {
   console.log();
   if (
     !askConfirm(
-      'Set them all up (one project per file, grouped under a single folder)?',
+      'Set them all up (one project per file, grouped together)?',
       true,
     )
   ) {
@@ -169,7 +169,7 @@ async function maybeInitMonorepo(opts: {
   const rootSuggestion = await suggestFromPackageJson(cwd);
   const groupDefault = slugify(rootSuggestion?.slug ?? '') || 'monorepo';
   console.log();
-  const group = askText('Group (folder) name for these projects', {
+  const group = askText('Group name for these projects', {
     default: groupDefault,
     required: true,
     validate: (v) => {

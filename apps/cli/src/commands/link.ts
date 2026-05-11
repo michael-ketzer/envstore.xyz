@@ -238,7 +238,7 @@ async function maybeExpandLinkIntoMonorepo(opts: {
     redeemed.group?.slug ?? slugify(redeemed.project) ?? 'monorepo';
   const group = redeemed.group
     ? redeemed.group.slug
-    : askText('Group (folder) name for these projects', {
+    : askText('Group name for these projects', {
         default: groupDefault,
         required: true,
         validate: (v) => {

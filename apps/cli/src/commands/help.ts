@@ -56,6 +56,12 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['ls envs [workspace/project]', 'List environments in a project'],
     ],
   },
+  {
+    title: 'About',
+    entries: [
+      ['licenses', 'Print third-party licenses bundled with envstore'],
+    ],
+  },
 ] as const;
 
 export async function help(_args: Args): Promise<void> {

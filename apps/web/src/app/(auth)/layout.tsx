@@ -2,6 +2,8 @@ import Link from 'next/link';
 
 import { Logo } from '@envstore/ui';
 
+import { Footer } from '@/components/footer';
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -15,6 +17,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <main className="flex flex-1 items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">{children}</div>
       </main>
+      <Footer />
     </div>
   );
 }

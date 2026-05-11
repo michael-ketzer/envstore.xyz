@@ -131,6 +131,16 @@ boring: age for end-to-end encryption, SHA-256 for hashes.
 AGPL'd. If you run a modified version as a hosted service, you have to share
 your changes — that's the point.
 
+Third-party components shipped with envstore (including the BSD 3-Clause
+licensed [`age-encryption`](https://github.com/FiloSottile/typage) library
+that performs all of our cryptography) are attributed in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). The same file is shipped
+alongside every CLI release; you can also print the bundled notices at any
+time with `envstore licenses`.
+
+envstore is not affiliated with, endorsed by, or sponsored by the age project
+or its authors. We use age as a dependency under the terms of its license.
+
 ---
 
 Built with TypeScript, Next.js 16, Auth.js v5, Prisma, Neon, Tailwind CSS,

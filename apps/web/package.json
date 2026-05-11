@@ -21,6 +21,7 @@
     "@envstore/db": "workspace:*",
     "@envstore/shared": "workspace:*",
     "@envstore/ui": "workspace:*",
+    "lucide-react": "^1.14.0",
     "next": "^16.2.6",
     "next-auth": "5.0.0-beta.25",
     "react": "^19.2.6",

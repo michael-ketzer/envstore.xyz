@@ -93,6 +93,11 @@ jobs:
             # SHA-256 alongside each binary — clients (incl. /install) can verify.
             (cd release && sha256sum "envstore-$target" > "envstore-$target.sha256")
           done
+          # Ship the third-party attribution alongside the binaries. BSD 3-Clause
+          # and similar licenses require this notice to travel with binary
+          # distributions.
+          cp LICENSE release/LICENSE
+          cp THIRD_PARTY_LICENSES.md release/THIRD_PARTY_LICENSES.md
           ls -la release/
 
       - name: Create GitHub release

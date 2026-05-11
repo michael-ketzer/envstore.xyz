@@ -12,6 +12,7 @@ import { CLI_VERSION } from './lib/paths';
 import { help } from './commands/help';
 import { identity } from './commands/identity';
 import { init } from './commands/init';
+import { licenses } from './commands/licenses';
 import { link } from './commands/link';
 import { login } from './commands/login';
 import { logout } from './commands/logout';
@@ -33,6 +34,7 @@ const COMMANDS: Record<string, Handler> = {
   list: ls, // alias
   push,
   pull,
+  licenses,
   help,
 };
 

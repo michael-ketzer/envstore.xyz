@@ -44,8 +44,11 @@ for sha in "$DARWIN_ARM" "$DARWIN_X64" "$LINUX_ARM" "$LINUX_X64"; do
   fi
 done
 
+# Target the `version "VERSION"` line specifically so we don't clobber the
+# literal word "VERSION" elsewhere in the template (e.g. the helper comment
+# at the top).
 sed \
-  -e "s|VERSION|${VERSION}|" \
+  -e "s|version \"VERSION\"|version \"${VERSION}\"|" \
   -e "s|SHA256_DARWIN_ARM64|${DARWIN_ARM}|" \
   -e "s|SHA256_DARWIN_X64|${DARWIN_X64}|" \
   -e "s|SHA256_LINUX_ARM64|${LINUX_ARM}|" \

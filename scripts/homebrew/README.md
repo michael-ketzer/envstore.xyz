@@ -38,17 +38,21 @@ After each `git tag v0.x.y && git push --tags` on `envstore.xyz`:
 
 1. Wait for the release workflow to finish and attach the binaries +
    `*.sha256` files to the GitHub release.
-2. Render the formula by running the helper from this repo (it fetches the
-   sha256 values from the GitHub release and substitutes the template):
+2. Run the publish helper. It renders the formula from the release's sha256
+   values, writes it into the tap clone, then commits and pushes:
 
    ```sh
-   bash scripts/homebrew/render-formula.sh 0.x.y \
-     > /path/to/homebrew-envstore/Formula/envstore.rb
+   bash scripts/homebrew/publish-formula.sh 0.x.y
    ```
 
-3. Commit + push to `homebrew-envstore`.
+   Defaults to `../homebrew-envstore` next to this monorepo; pass a path
+   as the second arg if your clone lives elsewhere.
 
 Existing users get the upgrade with `brew upgrade envstore` — no re-tap needed.
+
+The helper is layered: `render-formula.sh` just prints the rendered formula
+to stdout (useful for inspecting a diff), and `publish-formula.sh` wraps it
+with the tap-write + commit + push.
 
 ## Why a separate repo?
 

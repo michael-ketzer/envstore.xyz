@@ -10,8 +10,8 @@ permissions:
 
 env:
   # Same stubs as CI — the build step doesn't connect anywhere.
-  DATABASE_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=require"
-  DIRECT_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=require"
+  DATABASE_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full"
+  DIRECT_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full"
   AUTH_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   NEXT_PUBLIC_APP_URL: "https://envstore.xyz"
   PADDLE_ENV: "production"

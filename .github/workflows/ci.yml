@@ -13,8 +13,8 @@ concurrency:
 env:
   # Stubs sufficient to satisfy schema validation in env.ts. No real
   # connection ever happens during typecheck / build / lint.
-  DATABASE_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=require"
-  DIRECT_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=require"
+  DATABASE_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full"
+  DIRECT_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full"
   AUTH_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   NEXT_PUBLIC_APP_URL: "http://localhost:3000"
   PADDLE_ENV: "sandbox"

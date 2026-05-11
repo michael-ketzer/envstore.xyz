@@ -34,13 +34,14 @@ import {
   detectEnvironmentFromFilename,
   isMultiConfig,
   isText,
+  renderEnvstoreConfig,
   validateSlug,
   type EnvstoreFileEntry,
 } from '@envstore/shared';
 
 import { makeClient, type ApiClient } from '../lib/api';
 import type { Args } from '../lib/args';
-import { findProjectConfig, resolveApiUrl } from '../lib/config';
+import { findProjectConfig, resolveApiUrl, writeProjectConfig } from '../lib/config';
 import { ApiError, CliError } from '../lib/errors';
 import { matchFiles } from '../lib/files-filter';
 import { c, info, muted, success, warn } from '../lib/output';
@@ -112,25 +113,80 @@ export async function push(args: Args): Promise<void> {
         hint: `Configured files: ${cfg.config.files.map((f) => f.path).join(', ')}`,
       });
     }
-    for (const [i, file] of matches.entries()) {
-      if (matches.length > 1) {
-        info(c.gray(`\n[${i + 1}/${matches.length}] ${file.path}`));
+
+    // ----- Resolve env per file, batching the prompt -----
+    // Pre-classify each match: env is already determined from config or from
+    // the filename qualifier (".env.production" etc.), OR the user needs to
+    // pick. We ask ONCE for the unknown set so a `envstore push` over four
+    // bare ".env" files doesn't fire four identical prompts.
+    type Plan = { file: EnvstoreFileEntry; envSlug: string | null };
+    const plans: Plan[] = matches.map((file) => {
+      if (file.environment) return { file, envSlug: file.environment };
+      const det = detectEnvironmentFromFilename(file.path);
+      if (det.detected) return { file, envSlug: det.slug };
+      return { file, envSlug: null };
+    });
+    const needsPrompt = plans.filter((p) => p.envSlug === null);
+    let promptedEnv: string | null = null;
+    if (needsPrompt.length > 0) {
+      requireTty();
+      const label =
+        needsPrompt.length === 1
+          ? `${c.cyan(needsPrompt[0]!.file.path)} doesn't name an environment.`
+          : `${needsPrompt.length} files don't name an environment.`;
+      info(label);
+      promptedEnv = askText('Push to which environment?', {
+        default: 'development',
+        required: true,
+        validate: (v) => {
+          const r = validateSlug(v);
+          return r.ok ? null : r.reason;
+        },
+      });
+      for (const p of plans) {
+        if (p.envSlug === null) p.envSlug = promptedEnv;
       }
-      const filePath = resolve(configDir, file.path);
-      const envSlug = await resolveTargetEnv(filePath, args, file.environment);
+    }
+
+    // ----- Push every match -----
+    for (const [i, plan] of plans.entries()) {
+      if (plans.length > 1) {
+        info(c.gray(`\n[${i + 1}/${plans.length}] ${plan.file.path}`));
+      }
+      const filePath = resolve(configDir, plan.file.path);
       await pushOneFile({
         client,
         workspace,
-        projectSlug: file.project,
+        projectSlug: plan.file.project,
         filePath,
-        displayPath: file.path,
-        envSlug,
+        displayPath: plan.file.path,
+        envSlug: plan.envSlug!,
         recipients,
         comment: stringFlag(args.flags['comment']),
       });
     }
-    if (matches.length > 1) {
-      success(`Pushed ${matches.length}/${matches.length} files.`);
+    if (plans.length > 1) {
+      success(`Pushed ${plans.length}/${plans.length} files.`);
+    }
+
+    // ----- Persist the answer back to envstore.json -----
+    // Once the user said "development" for the unmapped files, write it into
+    // the config so the next push goes through without prompting.
+    if (promptedEnv && needsPrompt.length > 0) {
+      const updatedFiles: EnvstoreFileEntry[] = cfg.config.files.map((f) => {
+        const wasUnmapped = needsPrompt.some((p) => p.file.path === f.path);
+        return wasUnmapped ? { ...f, environment: promptedEnv! } : f;
+      });
+      const updatedContent = renderEnvstoreConfig({
+        workspace: cfg.config.workspace,
+        files: updatedFiles,
+        schemaUrl: cfg.config.$schema,
+        apiUrl: cfg.config.apiUrl,
+      });
+      await writeProjectConfig(cfg.path, updatedContent);
+      muted(
+        `Saved "${promptedEnv}" as the environment for ${needsPrompt.length} file${needsPrompt.length === 1 ? '' : 's'} in envstore.json — next push won't ask.`,
+      );
     }
     return;
   }
@@ -138,7 +194,43 @@ export async function push(args: Args): Promise<void> {
   // ----- Flat (legacy) path: positional[0] is a file path, single project -----
   const fileArg = args.positional[0] ?? '.env';
   const filePath = isAbsolute(fileArg) ? fileArg : resolve(process.cwd(), fileArg);
-  const envSlug = await resolveTargetEnv(filePath, args, undefined);
+
+  // Resolve env, tracking whether we had to prompt the user (so we can
+  // persist the answer back into envstore.json's `defaultEnv` and skip the
+  // prompt next time).
+  const flagEnv = stringFlag(args.flags['env']);
+  const hadDefaultEnv = Boolean(cfg.config.defaultEnv);
+  let envSlug: string;
+  let wasPrompted = false;
+  if (flagEnv) {
+    const r = validateSlug(flagEnv);
+    if (!r.ok) throw new CliError(`--env ${flagEnv}: ${r.reason}`);
+    envSlug = flagEnv;
+  } else if (cfg.config.defaultEnv) {
+    envSlug = cfg.config.defaultEnv;
+  } else {
+    const base = basename(filePath);
+    // `.env` and `.env.local` are "no qualifier" filenames — even though the
+    // detector might match `.local`, we treat them as ambiguous and ask.
+    const isBare = base === '.env' || base === '.env.local';
+    const det = detectEnvironmentFromFilename(filePath);
+    if (!isBare && det.detected) {
+      envSlug = det.slug;
+    } else {
+      requireTty();
+      info(`${c.cyan(base)} doesn't name an environment.`);
+      envSlug = askText('Push to which environment?', {
+        default: 'development',
+        required: true,
+        validate: (v) => {
+          const r = validateSlug(v);
+          return r.ok ? null : r.reason;
+        },
+      });
+      wasPrompted = true;
+    }
+  }
+
   await pushOneFile({
     client,
     workspace,
@@ -149,6 +241,23 @@ export async function push(args: Args): Promise<void> {
     recipients,
     comment: stringFlag(args.flags['comment']),
   });
+
+  // Persist the chosen env as defaultEnv so future bare-`.env` pushes don't
+  // re-prompt. Only fires when we actually prompted (not when --env was used
+  // or the filename carried a qualifier).
+  if (wasPrompted && !hadDefaultEnv) {
+    const updatedContent = renderEnvstoreConfig({
+      workspace: cfg.config.workspace,
+      project: cfg.config.project,
+      defaultEnv: envSlug,
+      schemaUrl: cfg.config.$schema,
+      apiUrl: cfg.config.apiUrl,
+    });
+    await writeProjectConfig(cfg.path, updatedContent);
+    muted(
+      `Saved "${envSlug}" as defaultEnv in envstore.json — next push won't ask.`,
+    );
+  }
 }
 
 async function pushOneFile(args: {

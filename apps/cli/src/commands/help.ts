@@ -21,7 +21,10 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['identity init', 'Generate an age keypair and register it with the server'],
       ['identity show', 'Print the local public recipient'],
       ['identity export <file>', 'Back up the secret key to a file (mode 0600)'],
-      ['identity export --clipboard', 'Copy the key to clipboard (paste into Apple Passwords / 1Password)'],
+      [
+        'identity export --clipboard',
+        'Copy the key to clipboard (paste into Apple Passwords / 1Password)',
+      ],
       ['identity import <file>', 'Restore an exported secret key from a file'],
       ['identity import --clipboard', 'Restore from the system clipboard'],
       ['identity import -', 'Restore from stdin (e.g. `pbpaste | envstore identity import -`)'],
@@ -45,6 +48,24 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['pull [env]', 'Download + decrypt (defaults: env=development, file=.env.<env>)'],
       ['pull staging --out .env.local', 'Custom output path'],
       ['pull staging --version 3', 'Pull a specific historical version'],
+    ],
+  },
+  {
+    title: 'Per-variable get / set',
+    entries: [
+      ['get <KEY>', "Print one var's value to stdout (no trailing newline)"],
+      ['get <KEY> --env staging', 'Read from a specific environment'],
+      ['set <KEY>=<value>', 'Update or add one var — pulls, decrypts, re-encrypts, pushes'],
+      ['set <KEY> --from-stdin', 'Read the value from stdin (keeps it out of argv)'],
+    ],
+  },
+  {
+    title: 'Local hygiene (no API call)',
+    entries: [
+      ['scan', 'Flag plaintext .env files tracked in this git repo'],
+      ['scan --staged', 'Pre-commit mode: only check what is staged for the next commit'],
+      ['genexample [file]', 'Derive .env.example from a .env (keys only, no values)'],
+      ['genexample --stdout', 'Print the example to stdout instead of writing'],
     ],
   },
   {
@@ -83,7 +104,7 @@ const SECTIONS: ReadonlyArray<Section> = [
   {
     title: 'Recovery / maintenance',
     entries: [
-      ['rekey', 'Re-encrypt every env to the workspace\'s current recipient set'],
+      ['rekey', "Re-encrypt every env to the workspace's current recipient set"],
       ['rekey --project <slug>', 'Limit to one project'],
       ['rekey --env <slug>', 'Limit to one environment'],
       ['rekey --dry-run', 'Report what would change without pushing'],
@@ -92,7 +113,10 @@ const SECTIONS: ReadonlyArray<Section> = [
   {
     title: 'Trust (local recipient cache)',
     entries: [
-      ['trust list', 'Show the cached recipient set per project (defends against server-side injection)'],
+      [
+        'trust list',
+        'Show the cached recipient set per project (defends against server-side injection)',
+      ],
       ['trust reset', 'Forget the cached set for the current project (next push will TOFU)'],
       ['trust reset --workspace <slug>', 'Forget every cached project under a workspace'],
       ['trust reset --all', 'Wipe the whole trust cache on this machine'],
@@ -101,9 +125,7 @@ const SECTIONS: ReadonlyArray<Section> = [
   },
   {
     title: 'About',
-    entries: [
-      ['licenses', 'Print third-party licenses bundled with envstore'],
-    ],
+    entries: [['licenses', 'Print third-party licenses bundled with envstore']],
   },
 ] as const;
 
@@ -121,7 +143,9 @@ export async function help(_args: Args): Promise<void> {
     console.log();
   }
   console.log(`${c.bold('Global flags:')}`);
-  console.log(`  ${c.cyan('--api-url <url>'.padEnd(34))} Override API URL (default: ENVSTORE_API_URL or envstore.xyz)`);
+  console.log(
+    `  ${c.cyan('--api-url <url>'.padEnd(34))} Override API URL (default: ENVSTORE_API_URL or envstore.xyz)`,
+  );
   console.log(`  ${c.cyan('--help'.padEnd(34))} Show this help`);
   console.log(`  ${c.cyan('--version'.padEnd(34))} Print CLI version`);
   console.log();

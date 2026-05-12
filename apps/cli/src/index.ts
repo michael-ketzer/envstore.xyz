@@ -9,6 +9,8 @@ import { parseArgs, type Args } from './lib/args';
 import { CliError } from './lib/errors';
 import { c, error } from './lib/output';
 import { CLI_VERSION } from './lib/paths';
+import { genexample } from './commands/genexample';
+import { get } from './commands/get';
 import { help } from './commands/help';
 import { identity } from './commands/identity';
 import { init } from './commands/init';
@@ -20,6 +22,8 @@ import { ls } from './commands/ls';
 import { pull } from './commands/pull';
 import { push } from './commands/push';
 import { rekey } from './commands/rekey';
+import { scan } from './commands/scan';
+import { set } from './commands/set';
 import { sync } from './commands/sync';
 import { token } from './commands/token';
 import { trust } from './commands/trust';
@@ -38,6 +42,10 @@ const COMMANDS: Record<string, Handler> = {
   list: ls, // alias
   push,
   pull,
+  get,
+  set,
+  scan,
+  genexample,
   rekey,
   sync,
   token,

@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { Button, Logo } from '@envstore/ui';
 
+import { ThemeToggle } from '@/components/theme-toggle';
 import { signOut } from '@/lib/auth';
 import { requireSession } from '@/lib/auth-helpers';
 
@@ -20,6 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Logo />
           </Link>
           <div className="flex items-center gap-4 text-sm">
+            <ThemeToggle />
             <Link
               href="/dashboard/account"
               className="text-muted-foreground hover:text-foreground"

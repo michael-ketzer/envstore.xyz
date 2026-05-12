@@ -2,6 +2,8 @@ import Link from 'next/link';
 
 import { PRICING } from '@envstore/shared';
 
+import { ThemeToggle } from '@/components/theme-toggle';
+
 const productLinks = [
   { href: '/', label: 'Home' },
   { href: '/#pricing', label: 'Pricing' },
@@ -54,6 +56,9 @@ export function Footer() {
           <FooterColumn title="Resources" links={resourceLinks} />
         </div>
 
+        <div className="mt-10 flex items-center justify-end border-t border-border pt-6">
+          <ThemeToggle />
+        </div>
       </div>
     </footer>
   );

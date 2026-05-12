@@ -1,0 +1,83 @@
+name: post-release smoke
+
+# Fires automatically when release.yml publishes a GitHub release. Downloads
+# the freshly-built binary on each supported platform and asserts:
+#   1. `--version` matches the release tag (catches "wrong version baked in").
+#   2. The .sha256 sidecar matches the binary we downloaded (catches a
+#      corrupted upload).
+#   3. `help` returns 0 and prints something sensible (catches a binary that
+#      compiles but can't even open its own help text).
+#
+# This deliberately does NOT touch a live API. A staging end-to-end test
+# belongs in a separate workflow once a staging deployment exists.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  smoke:
+    name: Smoke (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: envstore-linux-x64
+          - runner: macos-14
+            target: envstore-darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Resolve release tag
+        id: tag
+        # github.event.release.tag_name on `release` events; trim the leading
+        # `v` so other steps can use the bare version when needed.
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download binary + sha256 sidecar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ matrix.target }}" \
+            --pattern "${{ matrix.target }}.sha256"
+          ls -la "${{ matrix.target }}" "${{ matrix.target }}.sha256"
+
+      - name: Verify sha256 sidecar
+        # macOS doesn't ship sha256sum by default — use shasum -a 256 on Darwin.
+        # Both formats are "<hash>  <filename>", `-c` validates against the file.
+        run: |
+          set -euo pipefail
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c "${{ matrix.target }}.sha256"
+          else
+            shasum -a 256 -c "${{ matrix.target }}.sha256"
+          fi
+
+      - name: Make executable
+        run: chmod +x "${{ matrix.target }}"
+
+      - name: --version matches the release tag
+        run: |
+          set -euo pipefail
+          actual="$(./${{ matrix.target }} --version)"
+          expected="${{ steps.tag.outputs.version }}"
+          echo "binary reports: ${actual}"
+          echo "release tag:    ${expected}"
+          [ "${actual}" = "${expected}" ] || {
+            echo "Version mismatch — the binary in this release was built against the wrong version." >&2
+            exit 1
+          }
+
+      - name: help exits 0 and prints something
+        run: |
+          set -euo pipefail
+          out="$(./${{ matrix.target }} help)"
+          [ -n "$out" ] || { echo "help printed nothing" >&2; exit 1; }
+          echo "$out" | head -3

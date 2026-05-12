@@ -17,6 +17,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "topo": "echo 'shared topo ok'"
   },
   "dependencies": {

@@ -51,6 +51,12 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Test
+        # Unit tests across packages with testable logic — slug/filename/text
+        # validation, crypto round-trip, hash determinism, CLI args + file
+        # filter. Tests run under `bun test`; turbo fans out per package.
+        run: pnpm test
+
       - name: Build web (production)
         run: pnpm --filter @envstore/web build
 

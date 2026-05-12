@@ -14,6 +14,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "topo": "echo 'crypto topo ok'"
   },
   "dependencies": {

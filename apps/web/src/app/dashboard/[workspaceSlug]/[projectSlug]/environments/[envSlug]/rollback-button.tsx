@@ -41,25 +41,24 @@ export function RollbackButton({
   }
 
   return (
-    <form action={action} className="flex items-center gap-2">
-      <Button
-        type="submit"
-        variant="outline"
-        size="sm"
-        disabled={pending}
-        // Confirm before flipping. Server action ignores the click data
-        // and re-checks auth + ownership anyway, but a misclick here is
-        // a real-world hazard.
-        onClick={(e) => {
-          if (
-            !window.confirm(
-              `Make v${versionNumber} the current version for ${envSlug}? Pulls will return this version going forward.`,
-            )
-          ) {
-            e.preventDefault();
-          }
-        }}
-      >
+    <form
+      action={action}
+      className="flex items-center gap-2"
+      // Confirm on form submit so keyboard-Enter and any future
+      // JS-triggered submit paths both get prompted, not only a click
+      // on the Button. The server action also re-checks auth + ownership,
+      // but a misclick here is a real-world hazard.
+      onSubmit={(e) => {
+        if (
+          !window.confirm(
+            `Make v${versionNumber} the current version for ${envSlug}? Pulls will return this version going forward.`,
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <Button type="submit" variant="outline" size="sm" disabled={pending}>
         {pending ? 'Rolling back…' : 'Make current'}
       </Button>
       {state.error ? <span className="text-xs text-destructive">{state.error}</span> : null}

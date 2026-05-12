@@ -22,11 +22,11 @@ import {
   auditFieldsFor,
   authenticateBearer,
   notFound,
+  requireWriteScope,
   resolveWorkspaceForAuth,
   tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
-import { recordAudit } from '@/lib/audit';
 import {
   WorkspaceAccessDeniedError,
   requireWorkspaceWrite,
@@ -88,6 +88,8 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!tokenAllowsProject(auth, project.id)) {
     return apiError('Service token is not scoped to this project.', 403);
   }
+  const scopeDenied = requireWriteScope(auth);
+  if (scopeDenied) return scopeDenied;
 
   try {
     requireWorkspaceWrite(project.workspace);
@@ -138,25 +140,32 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   // We capture the previous pointer for audit so an admin can see the
-  // exact step that was undone, then flip the pointer.
+  // exact step that was undone. The pointer flip and the audit insert
+  // run in one transaction: if the audit write fails, the pointer
+  // doesn't budge — no silently-undone-state-without-a-trail.
+  // recordAudit() uses the global prisma client and would commit
+  // outside this transaction; we inline the create on `tx` instead.
   const previousVersionId = environment.currentVersionId;
-  await prisma.environment.update({
-    where: { id: environment.id },
-    data: { currentVersionId: target.id },
-  });
-
-  await recordAudit({
-    workspaceId: project.workspaceId,
-    ...auditFieldsFor(auth),
-    action: 'environment.update',
-    resourceType: 'environment',
-    resourceId: environment.id,
-    metadata: {
-      env: environment.slug,
-      rolledBackTo: target.version,
-      previousVersionId: previousVersionId ?? null,
-      via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.environment.update({
+      where: { id: environment.id },
+      data: { currentVersionId: target.id },
+    });
+    await tx.auditLog.create({
+      data: {
+        workspaceId: project.workspaceId,
+        ...auditFieldsFor(auth),
+        action: 'environment.update',
+        resourceType: 'environment',
+        resourceId: environment.id,
+        metadata: {
+          env: environment.slug,
+          rolledBackTo: target.version,
+          previousVersionId: previousVersionId ?? null,
+          via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
+        },
+      },
+    });
   });
 
   return Response.json({

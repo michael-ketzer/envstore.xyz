@@ -108,6 +108,7 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['versions --project <slug>', 'Pick a project in monorepo mode'],
       ['rollback <N>', 'Make version <N> the current one for the env (next pull returns it)'],
       ['rollback <N> --env <slug>', 'Roll a specific environment back'],
+      ['rollback <N> --project <slug>', 'Pick a project in monorepo mode'],
       ['rollback <N> --yes', 'Skip the confirmation prompt (for CI)'],
     ],
   },

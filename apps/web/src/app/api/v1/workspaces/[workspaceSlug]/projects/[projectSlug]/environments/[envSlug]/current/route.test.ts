@@ -12,12 +12,21 @@ import { WORKSPACE_TOKEN_PREFIX } from '@envstore/shared';
 
 import { makeDbMock } from '@/test/db-mock';
 
+// The route's pointer flip + audit insert happen inside one
+// prisma.$transaction so they commit together. The mock tx exposes the
+// same model accessors the route uses (environment.update, auditLog.create).
+const fakeTx = {
+  environment: { update: mock() },
+  auditLog: { create: mock() },
+};
+const fakeTransaction = mock(async (cb: (tx: typeof fakeTx) => unknown) => cb(fakeTx));
+
 const fakePrisma = {
+  $transaction: fakeTransaction,
   workspace: { findFirst: mock() },
   project: { findFirst: mock() },
-  environment: { findFirst: mock(), update: mock() },
+  environment: { findFirst: mock() },
   envFileVersion: { findFirst: mock(), findUnique: mock() },
-  auditLog: { create: mock() },
   cliToken: { findUnique: mock(), update: mock() },
   workspaceToken: { findUnique: mock(), update: mock() },
 };
@@ -28,15 +37,29 @@ mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
 
 const { POST } = await import('./route');
 
-beforeEach(() => {
-  for (const m of Object.values(fakePrisma)) {
-    for (const fn of Object.values(m)) (fn as ReturnType<typeof mock>).mockReset();
+// Reset every mock function reachable from fakePrisma and fakeTx.
+function resetMocks(obj: Record<string, unknown>): void {
+  for (const v of Object.values(obj)) {
+    if (typeof v === 'function' && 'mockReset' in v) {
+      (v as ReturnType<typeof mock>).mockReset();
+    } else if (v && typeof v === 'object') {
+      resetMocks(v as Record<string, unknown>);
+    }
   }
+}
+
+beforeEach(() => {
+  resetMocks(fakePrisma);
+  resetMocks(fakeTx);
+  // resetMocks above clears $transaction's implementation too, so re-
+  // install the pass-through default that calls the callback with the
+  // mock tx.
+  fakeTransaction.mockImplementation(async (cb: (tx: typeof fakeTx) => unknown) => cb(fakeTx));
   fakePrisma.cliToken.update.mockResolvedValue({});
   fakePrisma.workspaceToken.update.mockResolvedValue({});
   fakePrisma.workspace.findFirst.mockResolvedValue({ id: 'ws_1', slug: 'acme' });
-  fakePrisma.environment.update.mockResolvedValue({});
-  fakePrisma.auditLog.create.mockResolvedValue({});
+  fakeTx.environment.update.mockResolvedValue({});
+  fakeTx.auditLog.create.mockResolvedValue({});
 });
 
 async function stageUserAuth(bearer: string) {
@@ -164,7 +187,7 @@ describe('POST /current — scope + billing', () => {
     stageHappyProject();
     const res = await POST(postReq(bearer, { version: 1 }), ctx());
     expect(res.status).toBe(403);
-    expect(fakePrisma.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.environment.update).not.toHaveBeenCalled();
   });
 
   test('billing read-only tier (trial expired) → 402, no update', async () => {
@@ -184,7 +207,7 @@ describe('POST /current — scope + billing', () => {
     });
     const res = await POST(postReq('user-bearer', { version: 1 }), ctx());
     expect(res.status).toBe(402);
-    expect(fakePrisma.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.environment.update).not.toHaveBeenCalled();
   });
 
   test('environment not found → 404', async () => {
@@ -206,7 +229,7 @@ describe('POST /current — scope + billing', () => {
     fakePrisma.envFileVersion.findUnique.mockResolvedValueOnce(null);
     const res = await POST(postReq('user-bearer', { version: 99 }), ctx());
     expect(res.status).toBe(404);
-    expect(fakePrisma.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.environment.update).not.toHaveBeenCalled();
   });
 });
 
@@ -226,11 +249,11 @@ describe('POST /current — happy path + no-op', () => {
     const body = (await res.json()) as { ok: boolean; noop: boolean; version: number };
     expect(body).toMatchObject({ ok: true, noop: false, version: 5 });
 
-    expect(fakePrisma.environment.update).toHaveBeenCalledWith({
+    expect(fakeTx.environment.update).toHaveBeenCalledWith({
       where: { id: 'env_prod' },
       data: { currentVersionId: 'ver_5' },
     });
-    const auditCall = fakePrisma.auditLog.create.mock.calls[0]?.[0] as {
+    const auditCall = fakeTx.auditLog.create.mock.calls[0]?.[0] as {
       data: { action: string; metadata: Record<string, unknown> };
     };
     expect(auditCall.data.action).toBe('environment.update');
@@ -255,8 +278,8 @@ describe('POST /current — happy path + no-op', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { noop: boolean };
     expect(body.noop).toBe(true);
-    expect(fakePrisma.environment.update).not.toHaveBeenCalled();
-    expect(fakePrisma.auditLog.create).not.toHaveBeenCalled();
+    expect(fakeTx.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
   });
 
   test('using versionId path → 200, finds by id scoped to env', async () => {
@@ -290,7 +313,7 @@ describe('POST /current — happy path + no-op', () => {
 
     const res = await POST(postReq(bearer, { version: 5 }), ctx());
     expect(res.status).toBe(200);
-    const auditCall = fakePrisma.auditLog.create.mock.calls[0]?.[0] as {
+    const auditCall = fakeTx.auditLog.create.mock.calls[0]?.[0] as {
       data: { userId: string | null; workspaceTokenId: string | null; metadata: Record<string, unknown> };
     };
     expect(auditCall.data.userId).toBeNull();

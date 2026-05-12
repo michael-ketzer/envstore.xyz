@@ -47,57 +47,82 @@ export async function pruneEnvironmentHistory(
 ): Promise<PruneResult> {
   if (!Number.isInteger(limit) || limit < 1) return ZERO_RESULT;
 
-  // Resolve the live current pointer once. If we picked it up inside the
-  // findMany window below we'd race against a concurrent rollback. It's
-  // OK to be slightly stale here — the worst case is preserving an
-  // about-to-be-replaced row for one more push cycle.
-  const env = await prisma.environment.findUnique({
-    where: { id: environmentId },
-    select: { currentVersionId: true },
-  });
-  if (!env) return ZERO_RESULT;
-  const currentVersionId = env.currentVersionId;
+  // Phase 1 (inside a transaction with a row lock on the environment):
+  //   - acquire SELECT ... FOR UPDATE on the Environment row. This
+  //     serializes against any concurrent rollback (which the rollback
+  //     route now also runs in a transaction touching the same row),
+  //     so currentVersionId is stable for the duration of the prune.
+  //   - re-read currentVersionId under the lock — the only safe value
+  //     to exclude from the prune candidate set.
+  //   - compute the candidate ids (everything older than the cap,
+  //     minus the live pointer) and DELETE the DB rows.
+  //
+  // Phase 2 (outside the transaction):
+  //   - delete the matching R2 objects. Doing this OUTSIDE the lock is
+  //     deliberate: R2 calls go over the network and we don't want to
+  //     hold a row lock for the duration. The DB rows are gone, so
+  //     workspace members can't see them anymore. If R2 cleanup fails,
+  //     the result is orphaned R2 objects (no DB row pointing at them);
+  //     the retention-sweep cron handles those on a future pass. The
+  //     reverse — DB rows pointing at deleted R2 objects — would break
+  //     pull and is worse, which is why we deliberately don't keep the
+  //     old "R2 before DB" ordering.
+  type Candidate = { id: string; r2Key: string };
+  let candidates: Candidate[] = [];
 
-  // Newest-first ordering: take ids beyond the cap to prune. We fetch
-  // ONE extra (limit+1) before deciding whether anything is over-cap so
-  // a no-op push doesn't do a second query.
-  const recent = await prisma.envFileVersion.findMany({
-    where: { environmentId },
-    orderBy: { version: 'desc' },
-    select: { id: true, r2Key: true },
-    take: limit + 1,
+  await prisma.$transaction(async (tx) => {
+    // Lock the Environment row. If it doesn't exist, abort with no
+    // candidates — the outer function returns ZERO_RESULT.
+    const locked = await tx.$queryRaw<{ currentVersionId: string | null }[]>`
+      SELECT "currentVersionId"
+      FROM "Environment"
+      WHERE id = ${environmentId}
+      FOR UPDATE
+    `;
+    if (locked.length === 0) return;
+    const currentVersionId = locked[0]!.currentVersionId;
+
+    // Newest-first probe of limit+1 rows: if we got ≤ limit, nothing
+    // is over-cap and we exit the transaction with no candidates.
+    const recent = await tx.envFileVersion.findMany({
+      where: { environmentId },
+      orderBy: { version: 'desc' },
+      select: { id: true, r2Key: true },
+      take: limit + 1,
+    });
+    if (recent.length <= limit) return;
+
+    // Beyond cap. The over-cap set may extend further back than
+    // limit+1; resolve the oldest-kept row's version, then sweep
+    // everything strictly older than it (excluding the current
+    // pointer if it ended up in that range, e.g. post-rollback to an
+    // ancient version).
+    const oldestKept = recent[limit - 1]!;
+    const oldestKeptRow = await tx.envFileVersion.findUnique({
+      where: { id: oldestKept.id },
+      select: { version: true },
+    });
+    if (!oldestKeptRow) return;
+
+    candidates = await tx.envFileVersion.findMany({
+      where: {
+        environmentId,
+        version: { lt: oldestKeptRow.version },
+        ...(currentVersionId ? { id: { not: currentVersionId } } : {}),
+      },
+      select: { id: true, r2Key: true },
+    });
+    if (candidates.length === 0) return;
+
+    await tx.envFileVersion.deleteMany({
+      where: { id: { in: candidates.map((c) => c.id) } },
+    });
   });
 
-  // Under cap or exactly at cap → nothing to prune. Common steady-state path.
-  if (recent.length <= limit) return ZERO_RESULT;
-
-  // Beyond cap. Find ALL the over-cap rows (newest..limit are kept, the
-  // rest are candidates) — recent[limit..] are the first prune candidates,
-  // and there may be MORE beyond what the take=limit+1 returned, so do a
-  // second findMany scoped to "older than the oldest kept" instead of
-  // paginating.
-  const oldestKept = recent[limit - 1]!;
-  const oldestKeptRow = await prisma.envFileVersion.findUnique({
-    where: { id: oldestKept.id },
-    select: { version: true },
-  });
-  if (!oldestKeptRow) return ZERO_RESULT;
-
-  const candidates = await prisma.envFileVersion.findMany({
-    where: {
-      environmentId,
-      version: { lt: oldestKeptRow.version },
-      // Defensive: never sweep the current pointer, even if it's somehow
-      // older than the cap (post-rollback to an ancient version).
-      ...(currentVersionId ? { id: { not: currentVersionId } } : {}),
-    },
-    select: { id: true, r2Key: true },
-  });
   if (candidates.length === 0) return ZERO_RESULT;
 
-  // R2 first — if it fails we propagate, leaving DB rows intact so the
-  // next push gets another shot. Already-deleted keys are silent successes
-  // per deleteObjects' Quiet: true behavior.
+  // Phase 2: nuke the R2 objects. Best-effort; failures here leave
+  // orphans for the retention cron to clean up.
   let r2Skipped = false;
   try {
     await deleteObjects(candidates.map((c) => c.r2Key));
@@ -109,14 +134,9 @@ export async function pruneEnvironmentHistory(
     }
   }
 
-  // Then the DB rows. deleteMany is atomic at the SQL level so we don't
-  // half-delete on transient connection drop.
-  const ids = candidates.map((c) => c.id);
-  await prisma.envFileVersion.deleteMany({ where: { id: { in: ids } } });
-
   return {
-    prunedVersions: ids.length,
-    prunedR2Objects: r2Skipped ? 0 : ids.length,
+    prunedVersions: candidates.length,
+    prunedR2Objects: r2Skipped ? 0 : candidates.length,
     r2Skipped,
   };
 }

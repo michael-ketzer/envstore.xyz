@@ -79,6 +79,7 @@ export function WorkspaceSettingsForm({
           type="number"
           min={VERSION_HISTORY_LIMIT_MIN}
           max={VERSION_HISTORY_LIMIT_MAX}
+          step={1}
           defaultValue={defaultVersionHistoryLimit}
         />
         <p className="text-xs text-muted-foreground">

@@ -157,11 +157,20 @@ export default async function ProjectPage({
                         <div>v{env.currentVersion.version}</div>
                         <div>{env._count.versions} total</div>
                       </>
+                    ) : env._count.versions > 0 ? (
+                      // History exists but the current pointer was nulled
+                      // — happens when the currently-pointed version row
+                      // got deleted (SetNull on the FK). The History
+                      // page can still show what's left.
+                      <>
+                        <div className="italic">no current</div>
+                        <div>{env._count.versions} total</div>
+                      </>
                     ) : (
                       <span className="italic">never pushed</span>
                     )}
                   </div>
-                  {env.currentVersion ? (
+                  {env._count.versions > 0 ? (
                     <Link
                       href={`/dashboard/${workspaceSlug}/${project.slug}/environments/${env.slug}`}
                       className={buttonVariants({ variant: 'outline', size: 'sm' })}

@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache';
 
 import { prisma } from '@envstore/db';
 
-import { recordAudit } from '@/lib/audit';
 import { requireSession } from '@/lib/auth-helpers';
 import {
   WorkspaceAccessDeniedError,
@@ -74,24 +73,30 @@ export async function rollbackToVersionAction(
     return { ok: true, error: null };
   }
 
+  // Pointer flip + audit must commit together. recordAudit() uses the
+  // global prisma client and would land outside this transaction; we
+  // inline the audit-create on `tx` so a failure rolls both back.
   const previousVersionId = environment.currentVersionId;
-  await prisma.environment.update({
-    where: { id: environment.id },
-    data: { currentVersionId: target.id },
-  });
-
-  await recordAudit({
-    workspaceId: project.workspaceId,
-    userId: session.user.id,
-    action: 'environment.update',
-    resourceType: 'environment',
-    resourceId: environment.id,
-    metadata: {
-      env: environment.slug,
-      rolledBackTo: target.version,
-      previousVersionId: previousVersionId ?? null,
-      via: 'dashboard',
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.environment.update({
+      where: { id: environment.id },
+      data: { currentVersionId: target.id },
+    });
+    await tx.auditLog.create({
+      data: {
+        workspaceId: project.workspaceId,
+        userId: session.user.id,
+        action: 'environment.update',
+        resourceType: 'environment',
+        resourceId: environment.id,
+        metadata: {
+          env: environment.slug,
+          rolledBackTo: target.version,
+          previousVersionId: previousVersionId ?? null,
+          via: 'dashboard',
+        },
+      },
+    });
   });
 
   revalidatePath(

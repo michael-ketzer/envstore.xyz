@@ -1,9 +1,10 @@
 import 'server-only';
-import { randomInt } from 'node:crypto';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 
 import { prisma } from '@envstore/db';
-import { sha256Hex } from '@envstore/crypto/hash';
 import { DEFAULTS } from '@envstore/shared';
+
+import { env } from '@/env';
 
 import { sendOtpEmail } from './email';
 import { rateLimitByIp } from './rate-limit';
@@ -16,8 +17,22 @@ function generateCode(): string {
   return String(randomInt(0, 10 ** DEFAULTS.otpDigits)).padStart(DEFAULTS.otpDigits, '0');
 }
 
-async function hashCode(email: string, code: string): Promise<string> {
-  return sha256Hex(`${email}:${code}`);
+// HMAC the OTP against AUTH_SECRET so a passive DB dump alone isn't enough to
+// brute-force the 6-digit code space (1M entries vs. plain SHA-256 is cheap;
+// HMAC-SHA-256 with a 32+ byte secret the attacker doesn't have raises the
+// bar to "compromise the application server too"). Lowercase hex output so
+// it round-trips through the existing String column unchanged.
+function hashCode(email: string, code: string): string {
+  return createHmac('sha256', env.AUTH_SECRET).update(`${email}:${code}`).digest('hex');
+}
+
+// Constant-time string compare so per-character timing differences don't leak
+// a partial-match signal across the network (the email + OTP path is rate-
+// limited at the request level already, but the hash compare is the inner
+// loop and worth hardening).
+function constantTimeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 }
 
 export type RequestOtpResult =
@@ -48,7 +63,7 @@ export async function requestOtp(email: string): Promise<RequestOtpResult> {
   }
 
   const code = generateCode();
-  const tokenHash = await hashCode(normalized, code);
+  const tokenHash = hashCode(normalized, code);
   const expires = new Date(Date.now() + DEFAULTS.otpExpiryMinutes * 60_000);
 
   // Single outstanding OTP per email — wipe any prior records.
@@ -85,8 +100,8 @@ export async function verifyOtp(email: string, code: string): Promise<string | n
     return null;
   }
 
-  const expected = await hashCode(normalized, code);
-  if (expected !== record.token) {
+  const expected = hashCode(normalized, code);
+  if (!constantTimeEqualHex(expected, record.token)) {
     await prisma.verificationToken.update({
       where: { identifier_token: { identifier: record.identifier, token: record.token } },
       data: { attempts: { increment: 1 } },

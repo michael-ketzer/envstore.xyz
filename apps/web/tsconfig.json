@@ -8,5 +8,9 @@
     }
   },
   "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // Exclude *.test.ts from `tsc --noEmit` for the same reason CLI does — the
+  // `@types/bun` → `bun-types` → `@types/node` chain is hoist-sensitive in CI.
+  // `bun test` runs the test files directly with its own resolution, so type
+  // errors in tests still surface at execution time.
+  "exclude": ["node_modules", "src/**/*.test.ts"]
 }

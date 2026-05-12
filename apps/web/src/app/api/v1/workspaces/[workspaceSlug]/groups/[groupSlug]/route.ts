@@ -25,6 +25,14 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
+  // Project-scoped service tokens should not enumerate workspace-level
+  // group metadata. PATCH/DELETE below already block via requireUserAuth.
+  if (auth.kind === 'workspace-token' && auth.token.scopedProjectIds.length > 0) {
+    return apiError(
+      'Project-scoped service tokens cannot read workspace-level group metadata.',
+      403,
+    );
+  }
 
   const group = await prisma.projectGroup.findFirst({
     where: { workspaceId: ws.id, slug: groupSlug, deletedAt: null },

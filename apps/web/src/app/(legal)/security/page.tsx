@@ -187,6 +187,28 @@ export default function SecurityPage() {
           skip no-ops, and we can detect "this version is no longer reachable
           by anyone" if a workspace's recipient set rotates aggressively.
         </li>
+        <li>
+          <strong>Trust-on-first-use cache for recipient sets.</strong> The
+          CLI remembers every recipient set it has encrypted to per project
+          (<code>~/.config/envstore/trust.json</code>, mode 0600). First
+          contact prints the full set so you can verify out-of-band; later
+          additions require explicit confirmation, or{' '}
+          <code>--trust-new</code> in CI. This is the guard against an
+          active-API-compromise variant where the server injects an
+          attacker-controlled recipient into the push response — a class of
+          attack open against any end-to-end-encrypted vault that takes the
+          server&apos;s recipient list at face value.
+        </li>
+        <li>
+          <strong>Content-Security-Policy with per-request nonce.</strong>{' '}
+          Every page response carries a CSP that pins scripts to a
+          one-shot nonce + <code>&apos;strict-dynamic&apos;</code>, blocks
+          framing (clickjacking), pins form-action and base-uri to
+          <code>&apos;self&apos;</code>, and disables plugins/objects
+          entirely. A successful XSS still can&apos;t exfiltrate to an
+          attacker host because <code>connect-src</code> is locked to
+          envstore + Paddle.
+        </li>
       </ul>
 
       <h2>What's deliberately out of scope (for now)</h2>
@@ -198,9 +220,10 @@ export default function SecurityPage() {
           billing changes) is reasonable but not yet built.
         </li>
         <li>
-          <strong>Project- or environment-scoped service tokens.</strong>{' '}
-          v1 tokens are workspace-wide read+write. The schema leaves room for
-          finer-grained scopes; we'll add them when a real customer asks.
+          <strong>Environment-scoped service tokens.</strong>{' '}
+          Workspace tokens can be scoped down to specific projects today
+          (a token minted with <code>--projects test,staging</code> can&apos;t
+          touch production); per-environment scoping isn&apos;t built yet.
         </li>
         <li>
           <strong>Anomaly detection on token use.</strong> We record last-used

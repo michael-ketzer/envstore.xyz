@@ -143,16 +143,31 @@ export async function pollDeviceAuthorization(deviceCode: string): Promise<PollO
   if (auth.status === 'PENDING') return { kind: 'pending' };
 
   if (auth.status === 'APPROVED' && auth.approvedByUserId) {
-    // Mint the token now, on first successful poll after approval. We mark the
-    // authorization CONSUMED so the same approval can't be re-traded for another
-    // token.
-    const { token } = await issueCliToken({
+    // Atomically claim the approval before issuing a token. Two concurrent
+    // polls could otherwise both observe APPROVED, both mint a token, and
+    // both mark CONSUMED — leaving the user with two cliTokens for one
+    // approval (and a noisy audit log). The UPDATE narrows by `status` so
+    // only one row update succeeds; the loser sees count=0 and treats the
+    // already-consumed authorization as expired (which is what
+    // `auth.status === 'CONSUMED'` would have returned anyway one poll
+    // later).
+    const claimed = await prisma.deviceAuthorization.updateMany({
+      where: { id: auth.id, status: 'APPROVED' },
+      data: { status: 'CONSUMED' satisfies DeviceAuthorizationStatus },
+    });
+    if (claimed.count === 0) {
+      return { kind: 'expired' };
+    }
+    const { token, cliTokenId } = await issueCliToken({
       userId: auth.approvedByUserId,
       name: auth.clientName ?? 'envstore-cli',
     });
+    // Record which CliToken row corresponds to this approval. Useful for the
+    // audit trail and lets future support queries answer "which token was
+    // minted from device-code X".
     await prisma.deviceAuthorization.update({
       where: { id: auth.id },
-      data: { status: 'CONSUMED' satisfies DeviceAuthorizationStatus },
+      data: { cliTokenId },
     });
     return { kind: 'approved', token };
   }

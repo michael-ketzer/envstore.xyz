@@ -36,6 +36,33 @@ export const envstoreFileEntrySchema = z.object({
 
 export type EnvstoreFileEntry = z.infer<typeof envstoreFileEntrySchema>;
 
+// envstore.json is repo-local and committable. A malicious PR could otherwise
+// point `apiUrl` at an attacker-controlled host — combined with an
+// ENVSTORE_TOKEN set in CI, that would exfiltrate the bearer on the next
+// push. We require HTTPS (with a localhost escape hatch for self-hosted dev)
+// at the schema layer so the config parser rejects suspect URLs before any
+// auth header is sent. The CI-token-vs-config-URL pairing is additionally
+// guarded by assertTokenUrlSafe at the auth layer (creds.ts).
+const apiUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (raw) => {
+      const u = new URL(raw);
+      if (u.protocol === 'https:') return true;
+      if (u.protocol === 'http:') {
+        // WHATWG URL keeps the surrounding brackets on IPv6 hostnames
+        // (e.g. `new URL('http://[::1]:3000').hostname === '[::1]'`), so
+        // we strip them before comparing — otherwise `http://[::1]:…` for
+        // local dev would be rejected as non-loopback.
+        const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+        return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      }
+      return false;
+    },
+    { message: 'apiUrl must be https:// (http:// only allowed for localhost).' },
+  );
+
 // Flat (legacy / single-project) shape — workspace + project at the top level,
 // no path binding. The CLI's push/pull commands take the filename as an arg
 // (defaulting to `.env`).
@@ -46,7 +73,7 @@ const flatConfigSchema = z.object({
   project: projectSlugSchema,
   defaultEnv: environmentSlugSchema.optional(),
   // For self-hosted instances. Omitted means use the canonical envstore.xyz API.
-  apiUrl: z.string().url().optional(),
+  apiUrl: apiUrlSchema.optional(),
 });
 
 // Multi (monorepo) shape — workspace at the top, a `files[]` array binding
@@ -56,7 +83,7 @@ const multiConfigSchema = z.object({
   version: z.literal(ENVSTORE_CONFIG_VERSION).default(ENVSTORE_CONFIG_VERSION),
   workspace: workspaceSlugSchema,
   files: z.array(envstoreFileEntrySchema).min(1),
-  apiUrl: z.string().url().optional(),
+  apiUrl: apiUrlSchema.optional(),
 });
 
 // Discriminated by presence of `files`. zod's union picks the right one.

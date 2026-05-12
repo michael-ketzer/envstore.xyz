@@ -10,9 +10,11 @@
 import { prisma } from '@envstore/db';
 
 import {
+  apiError,
   authenticateBearer,
   notFound,
   resolveWorkspaceForAuth,
+  tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
 
@@ -42,6 +44,21 @@ export async function GET(req: Request, ctx: Ctx) {
     });
     if (!proj) return notFound('Project not found.');
     projectId = proj.id;
+    // If the CALLER is a project-scoped service token, it must include this
+    // project in its allowlist — otherwise it could enumerate recipient
+    // metadata (member emails, label strings, the public-key shapes of
+    // other tokens) for projects outside its scope.
+    if (!tokenAllowsProject(auth, projectId)) {
+      return apiError('Service token is not scoped to this project.', 403);
+    }
+  } else if (auth.kind === 'workspace-token' && auth.token.scopedProjectIds.length > 0) {
+    // No `?project=` argument + project-scoped token: there's no project
+    // context to authorize against and the workspace-wide member-recipient
+    // list would still flow through. Refuse rather than leak.
+    return apiError(
+      'Project-scoped service tokens must pass ?project=<slug> when fetching recipients.',
+      403,
+    );
   }
 
   // Pull every member's recipients PLUS every active service token. Token

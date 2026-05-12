@@ -50,6 +50,39 @@ describe('envstoreConfigSchema', () => {
     });
     expect(flat.apiUrl).toBe('https://envstore.example.com');
   });
+
+  test('rejects http:// for non-loopback hosts', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'my-team',
+        project: 'api',
+        apiUrl: 'http://attacker.example.com',
+      }),
+    ).toThrow();
+  });
+
+  test('accepts http://localhost and http://127.0.0.1 for dev', () => {
+    for (const apiUrl of [
+      'http://localhost:3000',
+      'http://localhost',
+      'http://127.0.0.1:8787',
+    ]) {
+      expect(() =>
+        envstoreConfigSchema.parse({ workspace: 'ws', project: 'pj', apiUrl }),
+      ).not.toThrow();
+    }
+  });
+
+  test('accepts http://[::1] (IPv6 loopback with WHATWG-style brackets)', () => {
+    // Regression: Node's URL.hostname returns `[::1]` (with brackets) for
+    // IPv6 literals, not `::1`. An earlier version of the refine check
+    // compared against `::1` only and rejected this legitimate local-dev URL.
+    for (const apiUrl of ['http://[::1]', 'http://[::1]:3000']) {
+      expect(() =>
+        envstoreConfigSchema.parse({ workspace: 'ws', project: 'pj', apiUrl }),
+      ).not.toThrow();
+    }
+  });
 });
 
 describe('normalizeToFiles', () => {

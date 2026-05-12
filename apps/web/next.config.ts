@@ -13,9 +13,10 @@ for (const rel of ['../../.env', '../../.env.local']) {
   if (existsSync(full)) loadEnv({ path: full, override: false });
 }
 
-// Security headers applied to every response. CSP is intentionally NOT here —
-// configuring it correctly with Next.js's inline hydration scripts requires
-// nonce plumbing through middleware. Keeping the rest tight in the meantime.
+// Security headers applied to every response. Content-Security-Policy is
+// emitted by the middleware in src/proxy.ts instead — its nonce-based
+// script-src needs a per-request value, which the static config-based
+// headers below can't provide.
 const securityHeaders = [
   // Force HTTPS for two years; opt in to browser preload lists.
   {

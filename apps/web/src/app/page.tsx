@@ -174,8 +174,8 @@ const comparison: Array<{ row: string; envstore: string; others: string }> = [
     others: 'Yes — "encrypted at rest"',
   },
   {
-    row: 'Compromised API can read your next push',
-    envstore: 'No — CLI checks the recipient set first',
+    row: 'Compromised API can silently widen who decrypts you',
+    envstore: 'No — CLI prints the recipient set and prompts on later changes',
     others: 'Yes — server already had the key',
   },
   { row: 'Key custody', envstore: 'You hold the key', others: 'Vendor holds the key' },
@@ -208,13 +208,16 @@ const faq: Array<{ q: string; a: React.ReactNode }> = [
     q: `What stops a compromised envstore from quietly adding its own key to your next push?`,
     a: (
       <>
-        Nothing server-side — which is exactly why the CLI does. Every workstation caches the
-        recipients it has encrypted to. If our API ever returns a public key your CLI hasn't seen
-        before — an attacker's, ours, anyone's — your push flags the new entry and waits for you to
-        confirm before encrypting. In CI the push fails outright unless you've passed{' '}
+        Nothing server-side — which is exactly why the CLI does. The very first push from a
+        workstation prints every recipient it&rsquo;s about to encrypt to and caches that set
+        under <code className={inlineCode}>~/.config/envstore/trust.json</code>. That first contact
+        is trust-on-first-use, so we rely on you actually reading the list (or comparing it to a
+        teammate&rsquo;s) — but after that, if our API ever returns a public key your CLI hasn&rsquo;t
+        seen before, your push flags the new entry and waits for you to confirm before encrypting.
+        In CI the push fails outright unless you&rsquo;ve passed{' '}
         <code className={inlineCode}>--trust-new</code>. The &ldquo;compromised server silently adds
         a key to read future pushes&rdquo; attack is real in every end-to-end-encrypted vault that
-        takes the server's recipient list on faith. envstore doesn't.
+        takes the server&rsquo;s recipient list on faith. envstore surfaces it.
       </>
     ),
   },

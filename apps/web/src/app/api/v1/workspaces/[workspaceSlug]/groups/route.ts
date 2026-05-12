@@ -14,6 +14,21 @@ import { createProjectGroup } from '@/lib/project-groups';
 
 type Ctx = { params: Promise<{ workspaceSlug: string }> };
 
+// Project-scoped service tokens shouldn't be browsing workspace-level
+// metadata — groups (and their names/descriptions) are organizational
+// information that a token scoped to one project has no need to see. We
+// 403 instead of filtering because there's no "groups for project X" view
+// today, and forcing the caller to a no-op response would just be lying.
+function denyProjectScopedToken(auth: Parameters<typeof requireUserAuth>[0]): Response | null {
+  if (auth.kind === 'workspace-token' && auth.token.scopedProjectIds.length > 0) {
+    return apiError(
+      'Project-scoped service tokens cannot browse workspace-level group metadata.',
+      403,
+    );
+  }
+  return null;
+}
+
 export async function GET(req: Request, ctx: Ctx) {
   const auth = await authenticateBearer(req);
   if (!auth) return unauthorized();
@@ -21,6 +36,8 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
+  const denied = denyProjectScopedToken(auth);
+  if (denied) return denied;
 
   const groups = await prisma.projectGroup.findMany({
     where: { workspaceId: ws.id, deletedAt: null },

@@ -1,24 +1,40 @@
 // POST /api/paddle/webhook — Paddle webhook receiver.
 //
 // Signature is verified via the SDK using PADDLE_WEBHOOK_SECRET. Idempotency
-// is enforced by inserting a PaddleWebhookEvent row keyed by Paddle's
-// `event_id` — the unique-index conflict is our "already processed" signal.
+// is enforced with two layers:
 //
-// We only act on a small set of event types; everything else is acknowledged
-// (so Paddle doesn't retry) and the payload is stored for audit/debug.
+//   1. Unique index on PaddleWebhookEvent.eventId — keeps duplicate inserts
+//      out of the audit table.
+//   2. Postgres transaction-scoped advisory lock keyed on the eventId —
+//      serializes concurrent deliveries of the same event so two parallel
+//      retries (e.g. Paddle's retry arriving while the first delivery is
+//      still dispatching) can't both run dispatch. The lock auto-releases
+//      at COMMIT/ROLLBACK, so a crashed handler doesn't strand the slot —
+//      the next delivery acquires the lock cleanly and either re-runs
+//      dispatch (processedAt still null) or returns dedup (processedAt
+//      set by a previous successful run).
+//
+// receivedAt is set on insert. processedAt is set ONLY after dispatch
+// succeeds — a row with null processedAt means the previous delivery's
+// handler crashed before finishing and the next retry must re-run dispatch.
 
-import { Prisma, prisma, SubscriptionStatus } from '@envstore/db';
+import { type Prisma, prisma, SubscriptionStatus } from '@envstore/db';
 import type {
   EventEntity,
   SubscriptionNotification,
 } from '@paddle/paddle-node-sdk';
 
 import { apiError } from '@/lib/api-auth';
-import { recordAudit, type AuditAction } from '@/lib/audit';
+import { type AuditAction } from '@/lib/audit';
 import { verifyAndParseWebhook, BillingNotConfiguredError } from '@/lib/paddle';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs'; // Webhook verification uses the Node crypto path of the SDK.
+
+// Prisma's interactive-transaction callback receives a TransactionClient.
+// The runtime tx exposes every model accessor on the regular prisma client
+// PLUS the raw-SQL helpers we need for the advisory lock.
+type Tx = Prisma.TransactionClient;
 
 export async function POST(req: Request): Promise<Response> {
   const signature = req.headers.get('paddle-signature');
@@ -40,40 +56,69 @@ export async function POST(req: Request): Promise<Response> {
     return apiError('Invalid Paddle signature.', 400);
   }
 
-  // Idempotency: race-safe via the unique index on eventId. If the insert
-  // fails with P2002 we've already processed this event — return 200 so
-  // Paddle stops retrying.
   try {
-    await prisma.paddleWebhookEvent.create({
-      data: {
-        eventId: event.eventId,
-        eventType: event.eventType,
-        payload: JSON.parse(rawBody) as Prisma.InputJsonValue,
+    const outcome = await prisma.$transaction(
+      async (tx) => {
+        // Acquire an exclusive transaction-scoped advisory lock keyed on
+        // the event id. Any other connection trying to acquire the same
+        // lock blocks here until our transaction ends (commit or
+        // rollback), at which point Postgres auto-releases. This gives us
+        // strict serialization across parallel duplicate deliveries
+        // without a TTL or claim-row to clean up. hashtext narrows the
+        // eventId (a string) to the 32-bit lock-id space — collisions
+        // across unrelated events are harmless (they'd just queue).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${event.eventId}))`;
+
+        const existing = await tx.paddleWebhookEvent.findUnique({
+          where: { eventId: event.eventId },
+          select: { processedAt: true },
+        });
+        if (existing?.processedAt) {
+          return 'deduplicated' as const;
+        }
+
+        if (!existing) {
+          await tx.paddleWebhookEvent.create({
+            data: {
+              eventId: event.eventId,
+              eventType: event.eventType,
+              payload: JSON.parse(rawBody) as Prisma.InputJsonValue,
+              // processedAt left null — set after successful dispatch below.
+            },
+          });
+        }
+
+        // Dispatch happens INSIDE the lock + transaction. If dispatch
+        // throws, the whole tx rolls back (the receivedAt row disappears
+        // too) and the next retry starts clean.
+        await dispatch(event, tx);
+
+        await tx.paddleWebhookEvent.update({
+          where: { eventId: event.eventId },
+          data: { processedAt: new Date() },
+        });
+        return 'processed' as const;
       },
-    });
-  } catch (err) {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+      // 15s is comfortably more than dispatch needs (an upsert + audit
+      // insert) and short enough that a stuck delivery doesn't tie up a
+      // connection pool slot indefinitely.
+      { timeout: 15_000 },
+    );
+
+    if (outcome === 'deduplicated') {
       return Response.json({ ok: true, deduplicated: true });
     }
-    throw err;
-  }
-
-  try {
-    await dispatch(event);
+    return Response.json({ ok: true });
   } catch (err) {
-    // We've stored the event; reading it back lets us replay if dispatch is
-    // broken. Surface the error so Paddle retries the delivery.
+    // Transaction rolled back. processedAt was never stamped (and the
+    // receivedAt row was rolled back too if it was a fresh insert), so the
+    // next Paddle retry re-runs dispatch from a clean slate.
     console.error('Paddle webhook dispatch failed:', err);
     return apiError('Webhook handler failed.', 500);
   }
-
-  return Response.json({ ok: true });
 }
 
-async function dispatch(event: EventEntity): Promise<void> {
+async function dispatch(event: EventEntity, tx: Tx): Promise<void> {
   switch (event.eventType) {
     case 'subscription.created':
     case 'subscription.activated':
@@ -86,6 +131,7 @@ async function dispatch(event: EventEntity): Promise<void> {
       await applySubscriptionEvent(
         event.data as SubscriptionNotification,
         event.eventType,
+        tx,
       );
       return;
     default:
@@ -98,6 +144,7 @@ async function dispatch(event: EventEntity): Promise<void> {
 async function applySubscriptionEvent(
   sub: SubscriptionNotification,
   eventType: string,
+  tx: Tx,
 ): Promise<void> {
   const workspaceId = pickWorkspaceId(sub);
   if (!workspaceId) {
@@ -120,23 +167,32 @@ async function applySubscriptionEvent(
 
   // Subscription row was created when the workspace was created (TRIALING).
   // Update it; create only as a defensive fallback for legacy workspaces.
-  await prisma.subscription.upsert({
+  await tx.subscription.upsert({
     where: { workspaceId },
     update: data,
     create: { workspaceId, ...data },
   });
 
+  // Audit log entry — written via the transaction so a dispatch failure
+  // doesn't leave a half-recorded billing event in the log. The shared
+  // recordAudit helper writes via the global prisma client, which would
+  // commit outside this transaction; we inline the create here instead.
   // eventType is one of `subscription.{created|activated|...}`, all of which
   // we've added to the AuditAction union as `billing.subscription.*`. TS can't
   // narrow the template literal, so the cast is safe and local.
-  await recordAudit({
-    workspaceId,
-    action: `billing.${eventType}` as AuditAction,
-    resourceType: 'subscription',
-    resourceId: sub.id,
-    metadata: {
-      paddleStatus: sub.status,
-      mappedStatus: data.status,
+  const action = `billing.${eventType}` as AuditAction;
+  await tx.auditLog.create({
+    data: {
+      workspaceId,
+      userId: null,
+      workspaceTokenId: null,
+      action,
+      resourceType: 'subscription',
+      resourceId: sub.id,
+      metadata: {
+        paddleStatus: sub.status,
+        mappedStatus: data.status,
+      },
     },
   });
 }

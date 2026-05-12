@@ -21,6 +21,10 @@ import {
   tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
+import {
+  WorkspaceAccessDeniedError,
+  requireWorkspaceRead,
+} from '@/lib/billing';
 import { presignGet, R2NotConfiguredError } from '@/lib/r2';
 
 type Ctx = { params: Promise<{ workspaceSlug: string; projectSlug: string }> };
@@ -46,14 +50,43 @@ export async function GET(req: Request, ctx: Ctx) {
   const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
   // Resolve the project first so we can run the token project-scope gate
-  // before doing any environment work.
+  // before doing any environment work. We also pull the workspace's
+  // subscription state in the same query so the billing gate below doesn't
+  // need a second roundtrip.
   const project = await prisma.project.findFirst({
     where: { workspaceId: ws.id, slug: projectSlug, deletedAt: null },
-    select: { id: true },
+    select: {
+      id: true,
+      workspace: {
+        select: {
+          type: true,
+          subscription: {
+            select: {
+              status: true,
+              trialEndsAt: true,
+              canceledAt: true,
+              paddleSubscriptionId: true,
+            },
+          },
+        },
+      },
+    },
   });
   if (!project) return notFound('Project not found.');
   if (!tokenAllowsProject(auth, project.id)) {
     return apiError('Service token is not scoped to this project.', 403);
+  }
+
+  // Billing gate — pulls require at least 'read-only' access. Trial-expired
+  // and cancel-grace workspaces stay readable so users can extract their
+  // data; only 'locked' (cancel-past-grace, unconfigured) blocks pulls.
+  try {
+    requireWorkspaceRead(project.workspace);
+  } catch (err) {
+    if (err instanceof WorkspaceAccessDeniedError) {
+      return apiError(err.access.message, 402, 'Open billing in the dashboard to resubscribe.');
+    }
+    throw err;
   }
   const environment = await prisma.environment.findFirst({
     where: {

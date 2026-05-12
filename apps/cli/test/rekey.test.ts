@@ -102,6 +102,67 @@ describe('envstore rekey', () => {
     expect(decrypted).toBe(plaintext);
   });
 
+  test('dedupes a duplicated recipient so the hash matches push (no perpetual churn)', async () => {
+    // F9 regression: push computes the recipient hash over a deduplicated set
+    // (`Array.from(new Set(...))`), so rekey must too — otherwise a server
+    // that returns the same recipient string twice (rare but possible if a
+    // user re-registers an identity, or if a service token's recipient
+    // collides with a member's) would yield a different hash for rekey than
+    // push, and rekey would re-push every env forever even at steady state.
+    const plaintext = 'STEADY=state\n';
+    // The dedupe'd hash — what push would have produced for the original push.
+    const dedupedHash = await recipientsHashHex([alice.recipient, bob.recipient]);
+    const ciphertext = await encryptForRecipients(plaintext, [
+      alice.recipient,
+      bob.recipient,
+    ]);
+    const project: ProjectFixture = {
+      slug: 'api',
+      name: 'api',
+      environments: new Map([
+        [
+          'development',
+          [
+            {
+              versionId: 'v_seed_1',
+              version: 1,
+              environmentSlug: 'development',
+              ciphertext,
+              ciphertextSha256: await sha256Hex(ciphertext),
+              recipientsHash: dedupedHash,
+            },
+          ],
+        ],
+      ]),
+    };
+    const workspace: WorkspaceFixture = {
+      slug: 'acme',
+      type: 'TEAM',
+      projects: new Map([['api', project]]),
+      // Server returns alice TWICE plus bob — same physical recipient set
+      // {alice, bob}, just non-deduped on the wire.
+      recipients: [alice.recipient, alice.recipient, bob.recipient],
+    };
+    server = await startMockServer({ workspaces: new Map([['acme', workspace]]) });
+
+    await writeFile(
+      join(tmp.path, 'envstore.json'),
+      JSON.stringify({ workspace: 'acme', project: 'api' }),
+    );
+
+    const r = await runCli(['rekey'], {
+      apiUrl: server.url,
+      cwd: tmp.path,
+      identity: alice.identity,
+    });
+    expect(r.exitCode).toBe(0);
+    // Steady state: no rekey should have fired. Before F9 the duplicate would
+    // have made rekey think the set drifted and re-push the env every run.
+    expect(r.stdout.toLowerCase()).toMatch(/already current|skip/);
+    const versions = server.state.workspaces.get('acme')!.projects.get('api')!.environments.get('development')!;
+    expect(versions.length).toBe(1);
+  });
+
   test('skips envs whose recipientsHash already matches (no-op steady state)', async () => {
     // Both alice and bob were in the recipient set when the env was pushed —
     // rekey should detect the match and skip without re-pushing.

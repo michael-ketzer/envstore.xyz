@@ -138,7 +138,10 @@ export async function rekey(args: Args): Promise<void> {
         { trustNew },
       );
     }
-    const recipients = res.recipients.map((r) => r.recipient);
+    // Dedupe to match push.ts and rekey-status — otherwise a duplicate
+    // recipient string in the server response would land in the hash twice
+    // here but only once on push, producing perpetual rekey churn.
+    const recipients = Array.from(new Set(res.recipients.map((r) => r.recipient)));
     const hash = await recipientsHashHex(recipients);
     const out: ResolvedRecipients = { recipients, hash };
     cache.set(projectSlug, out);

@@ -446,15 +446,23 @@ enum SubscriptionStatus {
   CANCELED
 }
 
-// Paddle webhook idempotency — we record every event we've processed so retries
+// Paddle webhook idempotency — we record every event we've seen so retries
 // from Paddle (or replays from our queue) don't double-apply. Rows are kept
 // indefinitely for audit; a future cron can prune events older than ~90 days.
+//
+// receivedAt is set on insert (signature verified, payload accepted).
+// processedAt is set only AFTER dispatch succeeds. A row with receivedAt
+// set + processedAt null means a prior delivery was accepted but its
+// handler crashed; the next retry must re-run dispatch rather than
+// returning "deduplicated". The webhook handler checks processedAt
+// explicitly on the dedupe path.
 model PaddleWebhookEvent {
-  id          String   @id @default(cuid())
-  eventId     String   @unique // Paddle's event_id (evt_...) — the idempotency key
-  eventType   String   // e.g. "subscription.activated"
-  payload     Json     // full webhook body for debugging / replay
-  processedAt DateTime @default(now())
+  id          String    @id @default(cuid())
+  eventId     String    @unique // Paddle's event_id (evt_...) — the idempotency key
+  eventType   String    // e.g. "subscription.activated"
+  payload     Json      // full webhook body for debugging / replay
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
 
-  @@index([eventType, processedAt])
+  @@index([eventType, receivedAt])
 }

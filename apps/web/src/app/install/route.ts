@@ -65,12 +65,33 @@ fi
 
 ASSET="$BINARY-$OS-$ARCH"
 URL="https://github.com/$REPO/releases/download/$LATEST_TAG/$ASSET"
+SUMS_URL="$URL.sha256"
 
 echo "envstore: installing $LATEST_TAG ($OS/$ARCH) → $INSTALL_DIR/$BINARY"
-TMP=$(mktemp)
-curl -fSL "$URL" -o "$TMP"
-chmod +x "$TMP"
-mv "$TMP" "$INSTALL_DIR/$BINARY"
+# Stage in a temp dir so a verification failure leaves nothing on PATH.
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+curl -fSL "$URL" -o "$WORK/$ASSET"
+curl -fSL "$SUMS_URL" -o "$WORK/$ASSET.sha256"
+
+# Verify the checksum sidecar against the freshly-downloaded binary before
+# anything lands on PATH. The release workflow publishes the .sha256 next
+# to every binary; clients (including this installer) MUST verify it —
+# otherwise a hostile mirror or a MITM could swap the binary unnoticed.
+echo "envstore: verifying sha256 sidecar..."
+( cd "$WORK"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -c "$ASSET.sha256" >/dev/null
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -c "$ASSET.sha256" >/dev/null
+  else
+    echo "envstore: cannot find sha256sum or shasum — refusing to install without verification." >&2
+    exit 1
+  fi
+)
+
+chmod +x "$WORK/$ASSET"
+mv "$WORK/$ASSET" "$INSTALL_DIR/$BINARY"
 
 echo "envstore: installed. Run \\\`envstore login\\\` to get started."
 

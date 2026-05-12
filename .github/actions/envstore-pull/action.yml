@@ -1,0 +1,83 @@
+name: 'envstore pull'
+description: 'Download and decrypt envstore-managed .env files using a workspace service token.'
+
+inputs:
+  token:
+    description: 'Workspace service token. Mint with `envstore token create`. Required.'
+    required: true
+  identity:
+    description: 'Age private key corresponding to the token. Printed alongside the token at creation. Required.'
+    required: true
+  version:
+    description: 'CLI version to install (e.g. "0.5.0"). Defaults to the latest GitHub release.'
+    required: false
+    default: ''
+  api-url:
+    description: 'API base URL. Defaults to https://envstore.xyz (the public deployment).'
+    required: false
+    default: 'https://envstore.xyz'
+  env:
+    description: 'Environment slug to pull (single-project flat config). Defaults to envstore.json defaultEnv or "development".'
+    required: false
+    default: ''
+  project:
+    description: 'Project filter for multi-config envstore.json (monorepo).'
+    required: false
+    default: ''
+  out:
+    description: 'Output path override (single-file pull only).'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Directory containing envstore.json. Defaults to the repository root.'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install envstore CLI
+      shell: bash
+      env:
+        ENVSTORE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}" in
+          Linux)   target="envstore-linux-x64"   ;;
+          macOS)   target="envstore-darwin-arm64" ;;
+          Windows) echo "Windows runners are not supported." >&2; exit 1 ;;
+          *)       echo "Unknown RUNNER_OS=${RUNNER_OS}" >&2; exit 1 ;;
+        esac
+        if [ -z "${ENVSTORE_VERSION}" ]; then
+          # Resolve the latest release tag from the public repo.
+          ENVSTORE_VERSION="$(curl -fsSL https://api.github.com/repos/michael-ketzer/envstore.xyz/releases/latest \
+            | grep -m1 '\"tag_name\":' | sed -E 's/.*\"tag_name\": *\"v?([^\"]+)\".*/\1/')"
+          echo "Resolved latest envstore CLI version: ${ENVSTORE_VERSION}"
+        fi
+        url="https://github.com/michael-ketzer/envstore.xyz/releases/download/v${ENVSTORE_VERSION}/${target}"
+        sha_url="${url}.sha256"
+
+        bin_dir="${RUNNER_TEMP}/envstore-bin"
+        mkdir -p "$bin_dir"
+        curl -fsSL "$url"     -o "$bin_dir/envstore"
+        curl -fsSL "$sha_url" -o "$bin_dir/envstore.sha256"
+        # The release shipping format is "<sha256>  <filename>" — we strip the
+        # filename to its basename so verification works regardless of cwd.
+        ( cd "$bin_dir" && awk '{print $1 "  envstore"}' envstore.sha256 | sha256sum -c - )
+        chmod +x "$bin_dir/envstore"
+        echo "$bin_dir" >> "$GITHUB_PATH"
+
+    - name: Pull
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ENVSTORE_TOKEN: ${{ inputs.token }}
+        ENVSTORE_IDENTITY: ${{ inputs.identity }}
+        ENVSTORE_API_URL: ${{ inputs.api-url }}
+      run: |
+        set -euo pipefail
+        args=()
+        if [ -n "${{ inputs.env }}" ]; then args+=("${{ inputs.env }}"); fi
+        if [ -n "${{ inputs.project }}" ]; then args+=(--project "${{ inputs.project }}"); fi
+        if [ -n "${{ inputs.out }}" ]; then args+=(--out "${{ inputs.out }}"); fi
+        envstore pull "${args[@]}"

@@ -25,6 +25,16 @@ type EnvSummary = {
   currentVersion: { version: number; createdAt: string; ciphertextSize: number } | null;
   versionsCount: number;
 };
+type RecipientsResponse = {
+  workspace: { slug: string; type: string };
+  recipients: {
+    id: string;
+    recipient: string;
+    kind: string;
+    label: string;
+    userEmail: string | null;
+  }[];
+};
 
 export async function ls(args: Args): Promise<void> {
   const project = await findProjectConfig();
@@ -48,6 +58,18 @@ export async function ls(args: Args): Promise<void> {
       `/api/v1/workspaces/${wsArg}/projects`,
     );
     printProjects(wsArg, projects);
+    return;
+  }
+
+  if (what === 'recipients') {
+    const wsArg = args.positional[1] ?? project?.config.workspace;
+    if (!wsArg) {
+      throw new CliError('Specify a workspace: `envstore ls recipients <workspace>`.');
+    }
+    const res = await client.get<RecipientsResponse>(
+      `/api/v1/workspaces/${wsArg}/recipients`,
+    );
+    printRecipients(wsArg, res.recipients);
     return;
   }
 
@@ -92,8 +114,24 @@ export async function ls(args: Args): Promise<void> {
   }
 
   throw new CliError(`Unknown target: ${what}`, {
-    hint: 'Try: workspaces | projects | envs',
+    hint: 'Try: workspaces | projects | envs | recipients',
   });
+}
+
+function printRecipients(
+  workspaceSlug: string,
+  list: RecipientsResponse['recipients'],
+): void {
+  if (list.length === 0) {
+    muted(`No recipients in ${workspaceSlug} yet.`);
+    return;
+  }
+  heading(`${workspaceSlug} / recipients (next push will encrypt to all of these)`);
+  for (const r of list) {
+    const owner = r.userEmail ? r.userEmail : c.gray(r.label);
+    const key = `${r.recipient.slice(0, 20)}…${r.recipient.slice(-8)}`;
+    console.log(`  ${c.cyan(key.padEnd(36))} ${owner}  ${c.gray(`(${r.kind.toLowerCase()})`)}`);
+  }
 }
 
 function printWorkspaces(list: MeWorkspace[]): void {

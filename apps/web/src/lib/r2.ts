@@ -10,6 +10,7 @@
 
 import 'server-only';
 import {
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -144,5 +145,24 @@ export async function headObject(key: string): Promise<R2Object | null> {
     const name = (err as { name?: string }).name;
     if (name === 'NotFound' || name === 'NoSuchKey') return null;
     throw err;
+  }
+}
+
+// Bulk delete used by the retention sweep. S3 caps each request at 1000 keys;
+// we batch above that. Silently treats missing keys as success — sweeps must
+// be idempotent because we run them on a cron and a partial previous run
+// may have already nuked some objects.
+export async function deleteObjects(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  const { bucket } = requireR2();
+  const BATCH = 1000;
+  for (let i = 0; i < keys.length; i += BATCH) {
+    const slice = keys.slice(i, i + BATCH);
+    await client().send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: slice.map((Key) => ({ Key })), Quiet: true },
+      }),
+    );
   }
 }

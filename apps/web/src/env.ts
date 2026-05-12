@@ -74,6 +74,14 @@ const serverEnvSchema = z.object({
   // identifier from the Paddle dashboard. Unset → checkout endpoint returns
   // 503 with a friendly "billing not configured" message.
   PADDLE_PRICE_ID_TEAM: optionalString,
+
+  // Shared secret protecting the retention-sweep cron route. The route accepts
+  // either `Authorization: Bearer <secret>` (manual / external schedulers) or
+  // a Vercel Cron request (verified via the `x-vercel-cron` header — Vercel
+  // injects this only on cron-originated invocations of cron-declared paths).
+  // Unset → cron route returns 503 to avoid a misconfigured deployment
+  // running un-authed deletes.
+  CRON_SECRET: optionalString,
 });
 
 const parsed = serverEnvSchema.safeParse(process.env);

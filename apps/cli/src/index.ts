@@ -19,6 +19,7 @@ import { logout } from './commands/logout';
 import { ls } from './commands/ls';
 import { pull } from './commands/pull';
 import { push } from './commands/push';
+import { rekey } from './commands/rekey';
 import { sync } from './commands/sync';
 import { token } from './commands/token';
 import { whoami } from './commands/whoami';
@@ -36,6 +37,7 @@ const COMMANDS: Record<string, Handler> = {
   list: ls, // alias
   push,
   pull,
+  rekey,
   sync,
   token,
   licenses,

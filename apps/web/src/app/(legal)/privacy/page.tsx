@@ -80,12 +80,22 @@ export default function PrivacyPolicyPage() {
       <h3>Operational logs</h3>
       <ul>
         <li>
-          Audit log of mutating actions (who created what, when) for security
-          and debugging
+          Audit log of mutating actions (who did what, when) for security and
+          debugging. Rows record the actor (user or workspace service token),
+          the action, the resource it touched, and the timestamp.{' '}
+          <strong>
+            We deliberately do not store IP addresses or User-Agent strings on
+            audit-log rows
+          </strong>{' '}
+          — both are personal data under GDPR, and the audit log doesn't need
+          them to answer its core question.
         </li>
         <li>
-          Request IP addresses and user-agent strings, retained for up to 90
-          days
+          For the short-lived CLI device-grant flow (the in-browser
+          confirmation step of <code>envstore login</code>), we briefly store
+          the requesting IP so you can verify "yes, this is my machine" on the
+          approval page. That row is deleted as soon as the device-grant flow
+          completes or expires (≤10 minutes).
         </li>
       </ul>
 
@@ -211,11 +221,18 @@ export default function PrivacyPolicyPage() {
         </li>
         <li>
           Environment ciphertext: kept until you delete the project / environment.
-          Soft-deleted resources are retained for the workspace's configured
-          retention window (default 30 days) before permanent removal.
+          Soft-deleted resources are hard-deleted by an automated daily sweep
+          after the workspace's configured retention window (default 30 days),
+          including the matching object-storage entries.
         </li>
-        <li>Audit logs: 12 months, then aggregated or deleted.</li>
-        <li>IP/user-agent logs: up to 90 days.</li>
+        <li>
+          Audit logs: 12 months, then aggregated or deleted. No IP addresses or
+          User-Agent strings are stored on these rows.
+        </li>
+        <li>
+          CLI device-grant approval rows: ≤10 minutes (deleted as soon as the
+          flow completes or expires).
+        </li>
         <li>Billing records: retained as long as required by tax law (typically 10 years in the EU).</li>
       </ul>
 

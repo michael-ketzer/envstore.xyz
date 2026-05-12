@@ -68,6 +68,7 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['ls workspaces', 'List workspaces'],
       ['ls projects [workspace]', 'List projects in a workspace'],
       ['ls envs [workspace/project]', 'List environments in a project'],
+      ['ls recipients [workspace]', 'List the keys a push will encrypt to (members + tokens)'],
     ],
   },
   {
@@ -76,6 +77,15 @@ const SECTIONS: ReadonlyArray<Section> = [
       ['token create <name>', 'Mint a workspace-scoped service token (one-shot output)'],
       ['token list', 'List service tokens for the workspace'],
       ['token revoke <id>', 'Revoke a service token immediately'],
+    ],
+  },
+  {
+    title: 'Recovery / maintenance',
+    entries: [
+      ['rekey', 'Re-encrypt every env to the workspace\'s current recipient set'],
+      ['rekey --project <slug>', 'Limit to one project'],
+      ['rekey --env <slug>', 'Limit to one environment'],
+      ['rekey --dry-run', 'Report what would change without pushing'],
     ],
   },
   {

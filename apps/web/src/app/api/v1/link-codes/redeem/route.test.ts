@@ -32,7 +32,13 @@ mock.module('@/lib/rate-limit', () => ({
       status: 429,
     }),
 }));
-mock.module('@/lib/project-link-codes', () => ({ redeemLinkCode: fakeRedeem }));
+// Mock the dedicated `@/lib/project-link-codes-redeem` re-export — that
+// path is used ONLY by route.ts and by this test, so the mock can't
+// collide with `projects.test.ts`'s mock of `./project-link-codes`
+// (Bun's `mock.module` cache is global and first-wins).
+mock.module('@/lib/project-link-codes-redeem', () => ({
+  redeemLinkCode: fakeRedeem,
+}));
 
 const { POST } = await import('./route');
 

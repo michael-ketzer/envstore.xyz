@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { apiError, authenticateBearer, requireUserAuth, unauthorized } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
-import { redeemLinkCode } from '@/lib/project-link-codes';
+import { redeemLinkCode } from '@/lib/project-link-codes-redeem';
 import { rateLimitByIp, tooManyRequests } from '@/lib/rate-limit';
 
 const bodySchema = z.object({

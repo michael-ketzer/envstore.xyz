@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { makeDbMock } from '@/test/db-mock';
+import { makeProjectLinkCodesMock } from '@/test/project-link-codes-mock';
 
 const fakePrisma = {
   project: { findUnique: mock(), create: mock() },
@@ -12,9 +13,15 @@ const fakePrisma = {
 
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
-mock.module('./project-link-codes', () => ({
-  pickUniqueLinkCode: async () => 'TESTCODE',
-}));
+// Use the shared mock helper that presents the FULL project-link-codes
+// export surface. A narrow mock here would be cached for the rest of the
+// test run and break project-link-codes.test.ts (which imports the real
+// module) and link-codes/redeem/route.test.ts.
+mock.module('./project-link-codes', () =>
+  makeProjectLinkCodesMock({
+    pickUniqueLinkCode: async () => 'TESTCODE',
+  }),
+);
 
 const { createProject } = await import('./projects');
 

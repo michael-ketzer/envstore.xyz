@@ -17,13 +17,17 @@ const fakePrisma = {
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
 
+// Import the impl directly — other tests in this suite mock the public
+// `./project-link-codes` path, and Bun's module-mock cache is shared
+// across test files. Importing the impl bypasses that cache so we always
+// exercise the real functions.
 const {
   normalizeLinkCode,
   formatLinkCode,
   ensureLinkCode,
   pickUniqueLinkCode,
   redeemLinkCode,
-} = await import('./project-link-codes');
+} = await import('./project-link-codes-impl');
 
 beforeEach(() => {
   for (const m of Object.values(fakePrisma)) {

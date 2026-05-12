@@ -1,9 +1,11 @@
 import { prisma } from '@envstore/db';
 
 import {
+  apiError,
   authenticateBearer,
   notFound,
   resolveWorkspaceForAuth,
+  tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
 
@@ -22,6 +24,9 @@ export async function GET(req: Request, ctx: Ctx) {
     select: { id: true },
   });
   if (!project) return notFound('Project not found.');
+  if (!tokenAllowsProject(auth, project.id)) {
+    return apiError('Service token is not scoped to this project.', 403);
+  }
 
   const envs = await prisma.environment.findMany({
     where: { projectId: project.id, deletedAt: null },

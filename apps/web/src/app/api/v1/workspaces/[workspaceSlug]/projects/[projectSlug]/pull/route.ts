@@ -18,6 +18,7 @@ import {
   authenticateBearer,
   notFound,
   resolveWorkspaceForAuth,
+  tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
 import { presignGet, R2NotConfiguredError } from '@/lib/r2';
@@ -44,11 +45,21 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
+  // Resolve the project first so we can run the token project-scope gate
+  // before doing any environment work.
+  const project = await prisma.project.findFirst({
+    where: { workspaceId: ws.id, slug: projectSlug, deletedAt: null },
+    select: { id: true },
+  });
+  if (!project) return notFound('Project not found.');
+  if (!tokenAllowsProject(auth, project.id)) {
+    return apiError('Service token is not scoped to this project.', 403);
+  }
   const environment = await prisma.environment.findFirst({
     where: {
+      projectId: project.id,
       slug: parsed.data.env,
       deletedAt: null,
-      project: { slug: projectSlug, workspaceId: ws.id, deletedAt: null },
     },
     include: {
       currentVersion: {

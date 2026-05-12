@@ -129,6 +129,16 @@ export function auditFieldsFor(auth: Authed): {
     : { userId: null, workspaceTokenId: auth.token.id };
 }
 
+// Gate for /workspaces/<ws>/projects/<projectId>/... endpoints. Users always
+// pass (they have workspace-wide access by membership); tokens pass only if
+// they're workspace-wide or the project is in their allowlist.
+export function tokenAllowsProject(auth: Authed, projectId: string): boolean {
+  if (auth.kind === 'user') return true;
+  const scope = auth.token.scopedProjectIds;
+  if (scope.length === 0) return true; // empty = workspace-wide
+  return scope.includes(projectId);
+}
+
 export function requestIp(): string | null {
   // Synchronous-ish helper for use inside handlers that have already awaited headers().
   // Most callers go through `pickIp` below instead.

@@ -79,23 +79,30 @@ export async function push(args: Args): Promise<void> {
   const client = makeClient(apiUrl);
   const { workspace } = cfg.config;
 
-  // Recipients are workspace-wide, so fetch once and reuse across files.
-  const recipientsResponse = await client.get<RecipientsResponse>(
-    `/api/v1/workspaces/${workspace}/recipients`,
-  );
-  if (recipientsResponse.recipients.length === 0) {
-    throw new CliError(
-      'No recipients registered on the server for this workspace.',
-      {
-        hint:
-          'Run `envstore identity init` (if you have not yet) so the server knows your public recipient. ' +
-          'For team workspaces, every member needs to register at least one identity.',
-      },
+  // Recipients are per-project once project-scoped tokens are in play. We
+  // memoize per project slug so a single-project push hits /recipients once,
+  // and a monorepo push hits it once per distinct project.
+  const recipientsCache = new Map<string, string[]>();
+  const fetchRecipientsForProject = async (projectSlug: string): Promise<string[]> => {
+    const cached = recipientsCache.get(projectSlug);
+    if (cached) return cached;
+    const res = await client.get<RecipientsResponse>(
+      `/api/v1/workspaces/${workspace}/recipients?project=${encodeURIComponent(projectSlug)}`,
     );
-  }
-  const recipients = Array.from(
-    new Set(recipientsResponse.recipients.map((r) => r.recipient)),
-  );
+    if (res.recipients.length === 0) {
+      throw new CliError(
+        `No recipients registered on the server for ${workspace}/${projectSlug}.`,
+        {
+          hint:
+            'Run `envstore identity init` (if you have not yet) so the server knows your public recipient. ' +
+            'For team workspaces, every member needs to register at least one identity.',
+        },
+      );
+    }
+    const recipients = Array.from(new Set(res.recipients.map((r) => r.recipient)));
+    recipientsCache.set(projectSlug, recipients);
+    return recipients;
+  };
 
   if (isMultiConfig(cfg.config)) {
     const configDir = dirname(cfg.path);
@@ -156,6 +163,7 @@ export async function push(args: Args): Promise<void> {
     const summaries: PushSummary[] = [];
     for (const [i, plan] of plans.entries()) {
       const filePath = resolve(configDir, plan.file.path);
+      const recipients = await fetchRecipientsForProject(plan.file.project);
       const summary = await pushOneFile({
         client,
         workspace,
@@ -242,6 +250,7 @@ export async function push(args: Args): Promise<void> {
     }
   }
 
+  const recipients = await fetchRecipientsForProject(cfg.config.project);
   await pushOneFile({
     client,
     workspace,

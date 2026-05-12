@@ -51,11 +51,12 @@ export type CreateWorkspaceTokenResult =
         name: string;
         recipient: string;
         scopes: string[];
+        scopedProjects: { slug: string; name: string }[];
         expiresAt: Date | null;
         createdAt: Date;
       };
     }
-  | { ok: false; reason: 'invalid-recipient'; message: string };
+  | { ok: false; reason: 'invalid-recipient' | 'unknown-project'; message: string };
 
 export async function createWorkspaceToken(args: {
   workspaceId: string;
@@ -74,6 +75,33 @@ export async function createWorkspaceToken(args: {
   }
   const kind = detectRecipientKind(input.recipient) ?? 'AGE_X25519';
 
+  // Resolve project slugs → IDs. We store IDs (immutable) on the token so a
+  // future slug rename doesn't silently expand the token's scope. An unknown
+  // slug or a slug that doesn't belong to this workspace is rejected.
+  let scopedProjectIds: string[] = [];
+  let scopedProjects: { slug: string; name: string }[] = [];
+  if (input.projects && input.projects.length > 0) {
+    const resolved = await prisma.project.findMany({
+      where: {
+        workspaceId,
+        slug: { in: input.projects },
+        deletedAt: null,
+      },
+      select: { id: true, slug: true, name: true },
+    });
+    const found = new Set(resolved.map((p) => p.slug));
+    const missing = input.projects.filter((s) => !found.has(s));
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        reason: 'unknown-project',
+        message: `Unknown project slug(s) in this workspace: ${missing.join(', ')}.`,
+      };
+    }
+    scopedProjectIds = resolved.map((p) => p.id);
+    scopedProjects = resolved.map((p) => ({ slug: p.slug, name: p.name }));
+  }
+
   const days = Math.min(input.expiresInDays ?? DEFAULT_EXPIRES_IN_DAYS, MAX_EXPIRES_IN_DAYS);
   const expiresAt = days > 0 ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
 
@@ -91,6 +119,7 @@ export async function createWorkspaceToken(args: {
         tokenHash,
         recipient: input.recipient,
         recipientKind: kind,
+        scopedProjectIds,
         expiresAt,
         createdByUserId,
       },
@@ -103,7 +132,7 @@ export async function createWorkspaceToken(args: {
         createdAt: true,
       },
     });
-    return { ok: true, bearer, token: created };
+    return { ok: true, bearer, token: { ...created, scopedProjects } };
   }
   throw new Error('Failed to allocate a unique workspace token after 4 attempts.');
 }
@@ -114,11 +143,26 @@ export async function listWorkspaceTokens(workspaceId: string) {
     orderBy: { createdAt: 'desc' },
     include: { createdBy: { select: { email: true } } },
   });
+  // Bulk-resolve every project ID referenced by any token's scope into a
+  // slug+name map so we don't N+1 across the list.
+  const allIds = new Set<string>();
+  for (const t of tokens) for (const id of t.scopedProjectIds) allIds.add(id);
+  const projectsById = new Map<string, { slug: string; name: string }>();
+  if (allIds.size > 0) {
+    const rows = await prisma.project.findMany({
+      where: { id: { in: Array.from(allIds) } },
+      select: { id: true, slug: true, name: true },
+    });
+    for (const p of rows) projectsById.set(p.id, { slug: p.slug, name: p.name });
+  }
   return tokens.map((t) => ({
     id: t.id,
     name: t.name,
     recipient: t.recipient,
     scopes: t.scopes,
+    scopedProjects: t.scopedProjectIds
+      .map((id) => projectsById.get(id))
+      .filter((p): p is { slug: string; name: string } => p !== undefined),
     expiresAt: t.expiresAt?.toISOString() ?? null,
     lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
     revokedAt: t.revokedAt?.toISOString() ?? null,

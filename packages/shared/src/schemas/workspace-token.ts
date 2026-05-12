@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { LIMITS } from '../constants';
+import { LIMITS, SLUG_REGEX } from '../constants';
 
 // Bearer prefix lets leaked tokens be greppable by GitGuardian / TruffleHog
 // patterns and visually distinguishes service tokens from user CLI tokens.
@@ -13,6 +13,12 @@ export const WORKSPACE_TOKEN_LENGTH = WORKSPACE_TOKEN_PREFIX.length + 52;
 // pathological inputs don't reach the DB.
 const recipientSchema = z.string().min(20).max(500);
 
+const projectSlugInToken = z
+  .string()
+  .min(LIMITS.slugMin)
+  .max(LIMITS.slugMax)
+  .regex(SLUG_REGEX, 'Invalid project slug');
+
 export const workspaceTokenCreateSchema = z.object({
   name: z.string().min(1).max(LIMITS.nameMax).trim(),
   // Public half of an age keypair the CLI generated locally. Server never
@@ -21,6 +27,10 @@ export const workspaceTokenCreateSchema = z.object({
   // Optional expiry in days from now. Server caps at a max and defaults
   // when omitted; see lib/workspace-tokens.ts.
   expiresInDays: z.number().int().min(1).max(365).optional(),
+  // Optional project-scope allowlist (slugs). Omitted or empty array =
+  // token authorizes every project in the workspace. Populated = strict
+  // allowlist; server resolves slugs to IDs and stores those.
+  projects: z.array(projectSlugInToken).max(50).optional(),
 });
 
 export type WorkspaceTokenCreateInput = z.infer<typeof workspaceTokenCreateSchema>;
@@ -34,6 +44,10 @@ export const workspaceTokenSummarySchema = z.object({
   name: z.string(),
   recipient: z.string(),
   scopes: z.array(z.string()),
+  // Slugs of the projects the token is restricted to. Empty array = no
+  // restriction (workspace-wide). The server resolves stored project IDs
+  // back to slugs for display so a token survives slug renames.
+  scopedProjects: z.array(z.object({ slug: z.string(), name: z.string() })),
   expiresAt: z.string().nullable(), // ISO
   lastUsedAt: z.string().nullable(),
   revokedAt: z.string().nullable(),

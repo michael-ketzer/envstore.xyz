@@ -26,11 +26,7 @@ import {
   recipientsHashHex,
   sha256Hex,
 } from '@envstore/crypto/hash';
-import {
-  isMultiConfig,
-  PERSONAL_WORKSPACE_URL_SLUG,
-  type EnvstoreConfig,
-} from '@envstore/shared';
+import { isMultiConfig, type EnvstoreConfig } from '@envstore/shared';
 
 import { makeClient, type ApiClient } from '../lib/api';
 import type { Args } from '../lib/args';
@@ -111,24 +107,31 @@ export async function rekey(args: Args): Promise<void> {
     return;
   }
 
-  // Fetch the recipient set once: rekey decisions all depend on its hash.
-  const recipientsRes = await client.get<RecipientsResponse>(
-    `/api/v1/workspaces/${workspace}/recipients`,
-  );
-  const currentRecipients = recipientsRes.recipients.map((r) => r.recipient);
-  if (currentRecipients.length === 0) {
-    throw new CliError('Workspace has no recipients to encrypt to.', {
-      hint: 'Have at least one member run `envstore identity init` before rekeying.',
-    });
-  }
-  const currentHash = await recipientsHashHex(currentRecipients);
-  const displayWorkspace =
-    recipientsRes.workspace.type === 'PERSONAL' ? PERSONAL_WORKSPACE_URL_SLUG : workspace;
+  // Recipient sets are per-project now (a project-scoped token only joins
+  // pushes to its own projects), so we cache per project slug rather than
+  // computing one workspace-wide hash up front.
+  type ResolvedRecipients = { recipients: string[]; hash: string };
+  const cache = new Map<string, ResolvedRecipients>();
+  const fetchProjectRecipients = async (projectSlug: string): Promise<ResolvedRecipients> => {
+    const cached = cache.get(projectSlug);
+    if (cached) return cached;
+    const res = await client.get<RecipientsResponse>(
+      `/api/v1/workspaces/${workspace}/recipients?project=${encodeURIComponent(projectSlug)}`,
+    );
+    const recipients = res.recipients.map((r) => r.recipient);
+    if (recipients.length === 0) {
+      throw new CliError(
+        `No recipients to encrypt to for ${workspace}/${projectSlug}.`,
+        { hint: 'Have at least one member run `envstore identity init` first.' },
+      );
+    }
+    const hash = await recipientsHashHex(recipients);
+    const out: ResolvedRecipients = { recipients, hash };
+    cache.set(projectSlug, out);
+    return out;
+  };
 
-  info(
-    `Workspace ${c.cyan(displayWorkspace)}: ${currentRecipients.length} active recipient${currentRecipients.length === 1 ? '' : 's'}.`,
-  );
-  info(`${targets.length} env${targets.length === 1 ? '' : 's'} to evaluate.`);
+  info(`${targets.length} env${targets.length === 1 ? '' : 's'} to evaluate across ${new Set(targets.map((t) => t.projectSlug)).size} project${new Set(targets.map((t) => t.projectSlug)).size === 1 ? '' : 's'}.`);
   console.log();
 
   let rekeyed = 0;
@@ -139,6 +142,7 @@ export async function rekey(args: Args): Promise<void> {
     const pull = await client.get<PullResponse>(
       `/api/v1/workspaces/${workspace}/projects/${target.projectSlug}/pull?env=${encodeURIComponent(target.envSlug)}`,
     );
+    const { recipients, hash: currentHash } = await fetchProjectRecipients(target.projectSlug);
     if (pull.recipientsHash === currentHash) {
       skipped += 1;
       muted(`${prefix} ${label} → already current (v${pull.version}). Skipping.`);
@@ -155,7 +159,7 @@ export async function rekey(args: Args): Promise<void> {
       target,
       pull,
       identity: identity.identity,
-      recipients: currentRecipients,
+      recipients,
       prefix,
       label,
     });

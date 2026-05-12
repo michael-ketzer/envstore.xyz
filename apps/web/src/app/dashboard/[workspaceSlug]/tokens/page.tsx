@@ -68,11 +68,32 @@ export default async function TokensPage({
           creation deliberately — keeping age private keys out of the browser is part of the
           zero-knowledge guarantee.
         </p>
-        <div className="mt-4">
-          <CodeBlock
-            code={`envstore token create ci-prod --workspace ${workspaceSlug}`}
-            label="Copy create command"
-          />
+        <div className="mt-4 space-y-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              All projects in this workspace
+            </p>
+            <CodeBlock
+              className="mt-1"
+              code={`envstore token create ci-prod --workspace ${workspaceSlug}`}
+              label="Copy create command"
+            />
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Restricted to specific projects
+            </p>
+            <CodeBlock
+              className="mt-1"
+              code={`envstore token create ci-test --workspace ${workspaceSlug} --projects test,staging`}
+              label="Copy create command"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              A scoped token can only push or pull against the listed projects. Pushes to other
+              projects in this workspace won't encrypt to its key, so even with a leaked token +
+              identity an attacker can't decrypt out-of-scope ciphertext.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -119,7 +140,23 @@ export default async function TokensPage({
                         <span className="italic">never</span>
                       )}
                     </span>
-                    <span>Scopes: {t.scopes.join(', ')}</span>
+                    <span>Permissions: {t.scopes.join(', ')}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>Projects:</span>
+                    {t.scopedProjects.length === 0 ? (
+                      <span className="italic">all projects in this workspace</span>
+                    ) : (
+                      t.scopedProjects.map((p) => (
+                        <Link
+                          key={p.slug}
+                          href={`/dashboard/${workspaceSlug}/${p.slug}`}
+                          className="rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground hover:bg-muted-foreground/10"
+                        >
+                          {p.name}
+                        </Link>
+                      ))
+                    )}
                   </div>
                   <div className="mt-2 font-mono text-[11px] text-muted-foreground">
                     recipient: {truncateMiddle(t.recipient, 20, 12)}

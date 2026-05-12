@@ -64,6 +64,102 @@ const steps = [
   },
 ];
 
+const inlineCode = 'bg-muted text-foreground rounded px-1 py-0.5 font-mono text-[0.85em]';
+
+const monorepoConfigExample = `{
+  "workspace": "shinra",
+  "files": [
+    { "path": "apps/web/.env.local",   "project": "shinra-web",    "environment": "development" },
+    { "path": "apps/api/.env",         "project": "shinra-api",    "environment": "development" },
+    { "path": "apps/worker/.env",      "project": "shinra-worker", "environment": "development" }
+  ]
+}`;
+
+const monorepoCliExample = `$ envstore init
+Found 3 .env files. Group them as a monorepo? Y
+Group name: shinra
+  shinra-web    -> apps/web/.env.local
+  shinra-api    -> apps/api/.env
+  shinra-worker -> apps/worker/.env
+Wrote envstore.json (3 files).
+
+$ envstore push           # encrypts & uploads every file
+$ envstore push apps/web  # path-prefix filter
+$ envstore sync           # reconcile when files change
+`;
+
+const monorepoBullets: Array<{ key: string; node: React.ReactNode }> = [
+  {
+    key: 'init',
+    node: (
+      <>
+        <code className={inlineCode}>envstore init</code> walks the tree and proposes one project
+        per .env file it finds
+      </>
+    ),
+  },
+  {
+    key: 'apps',
+    node: <>Apps stay as separate projects — apps/web is not an environment of apps/api</>,
+  },
+  {
+    key: 'groups',
+    node: (
+      <>
+        Project groups cluster monorepo siblings together in the dashboard and CLI listings
+      </>
+    ),
+  },
+  {
+    key: 'filters',
+    node: (
+      <>
+        <code className={inlineCode}>push</code> and <code className={inlineCode}>pull</code>{' '}
+        filter by path prefix, <code className={inlineCode}>--project</code>, or{' '}
+        <code className={inlineCode}>--env</code>
+      </>
+    ),
+  },
+  {
+    key: 'sync',
+    node: (
+      <>
+        <code className={inlineCode}>envstore sync</code> reconciles envstore.json with the
+        filesystem, with <code className={inlineCode}>--dry-run</code> and{' '}
+        <code className={inlineCode}>--prune</code> modes
+      </>
+    ),
+  },
+  {
+    key: 'link',
+    node: (
+      <>
+        <code className={inlineCode}>envstore link &lt;code&gt;</code> offers to register every
+        .env file when joining an existing workspace
+      </>
+    ),
+  },
+];
+
+const alsoShipped: Array<{ title: string; body: string }> = [
+  {
+    title: 'Service tokens for CI',
+    body: `"envstore token create" generates an X25519 keypair on your runner — the private key never leaves the box. Tokens get their own public recipient, so every push encrypts to CI alongside humans.`,
+  },
+  {
+    title: 'GitHub Action',
+    body: `A composite action wraps "envstore pull" for workflows. Installs the pinned release binary, verifies it against the sha256 sidecar, and runs the pull with ENVSTORE_TOKEN + ENVSTORE_IDENTITY.`,
+  },
+  {
+    title: 'Audit log viewer',
+    body: `Every push and pull is recorded with timestamp, actor, and resource. Human members and CI tokens are attributed distinctly so the dashboard tells you at a glance which was which.`,
+  },
+  {
+    title: 'envstore rekey',
+    body: `Teammate joined or a token rotated? "envstore rekey" walks every (project, env) reachable from envstore.json and re-encrypts to the workspace's current recipient set.`,
+  },
+];
+
 const comparison: Array<{ row: string; envstore: string; others: string }> = [
   { row: 'Pricing', envstore: `$${priceDollars} / workspace`, others: '$5–8 / user / month' },
   { row: 'Team members', envstore: 'Unlimited', others: 'Per-seat' },
@@ -121,6 +217,36 @@ const faq: Array<{ q: string; a: React.ReactNode }> = [
         want a vault that can show you the value in a browser, those vendors are the right fit. If
         you want a vendor that cannot leak your secrets even when breached, you are in the right
         place.
+      </>
+    ),
+  },
+  {
+    q: `My repo has six services in it. Do I have to register them by hand?`,
+    a: (
+      <>
+        No. <code className={inlineCode}>envstore init</code> walks your tree, lists every .env
+        file it finds, and registers all of them in one go. Each app becomes its own project (so
+        secrets stay scoped) but they share a group, so the dashboard shows them as a single
+        monorepo at a glance. After that,{' '}
+        <code className={inlineCode}>envstore push</code> with no arguments encrypts and uploads
+        every file;{' '}
+        <code className={inlineCode}>envstore push apps/web</code> narrows by path. When you add
+        a new .env tomorrow, <code className={inlineCode}>envstore sync</code> pulls it into the
+        config.
+      </>
+    ),
+  },
+  {
+    q: `How do I get secrets into CI without burning a real user identity?`,
+    a: (
+      <>
+        Mint a workspace service token. The CLI generates the X25519 keypair on your laptop,
+        registers the public part, and hands you the bearer token once. Pass{' '}
+        <code className={inlineCode}>ENVSTORE_TOKEN</code> and{' '}
+        <code className={inlineCode}>ENVSTORE_IDENTITY</code> as secrets to your runner — or use
+        the bundled GitHub Action, which installs the binary (sha256-verified) and runs the pull
+        for you. Tokens can't mint other tokens or change ACL, so the blast radius of a leak is
+        the workspace's current ciphertext, nothing more.
       </>
     ),
   },
@@ -185,6 +311,12 @@ export default function LandingPage() {
               className="text-muted-foreground hover:text-foreground hidden transition-colors sm:inline"
             >
               Features
+            </a>
+            <a
+              href="#monorepos"
+              className="text-muted-foreground hover:text-foreground hidden transition-colors sm:inline"
+            >
+              Monorepos
             </a>
             <a
               href="#pricing"
@@ -312,6 +444,81 @@ export default function LandingPage() {
           </div>
         </section>
 
+        <section id="monorepos" className="border-border border-b">
+          <div className="mx-auto max-w-6xl px-6 py-20">
+            <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">
+              Just shipped
+            </p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
+              Built for monorepos.
+            </h2>
+            <p className="text-muted-foreground mt-6 max-w-2xl text-pretty">
+              One <code className={inlineCode}>envstore.json</code> at the root of your repo, every{' '}
+              <em>.env</em> file in it — apps, services, workers, whatever shape your repo has.{' '}
+              <code className={inlineCode}>envstore init</code> walks the tree, registers one
+              project per file, and tags them with a shared group so the dashboard renders the
+              monorepo as a single thing.
+            </p>
+
+            <div className="mt-10 grid gap-6 lg:grid-cols-2">
+              <div className="min-w-0">
+                <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">
+                  envstore.json
+                </p>
+                <CodeBlock
+                  className="mt-3 w-full min-w-0"
+                  code={monorepoConfigExample}
+                  label="Copy envstore.json example"
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">
+                  init detects, push moves everything
+                </p>
+                <CodeBlock
+                  className="mt-3 w-full min-w-0"
+                  code={monorepoCliExample}
+                  label="Copy CLI example"
+                />
+              </div>
+            </div>
+
+            <ul className="mt-10 grid gap-3 text-sm sm:grid-cols-2">
+              {monorepoBullets.map((b) => (
+                <li key={b.key} className="text-muted-foreground flex gap-2">
+                  <span aria-hidden className="text-foreground/60 select-none">
+                    ✓
+                  </span>
+                  <span>{b.node}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <section className="border-border bg-muted/20 border-b">
+          <div className="mx-auto max-w-6xl px-6 py-20">
+            <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">
+              Also new
+            </p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
+              Wired into how your team actually deploys.
+            </h2>
+            <p className="text-muted-foreground mt-4 max-w-2xl">
+              Monorepo support is the headline. The rest of this week's ship list is the
+              operational glue around it — CI, audit, recovery.
+            </p>
+            <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {alsoShipped.map((f) => (
+                <div key={f.title} className="border-border bg-background rounded-md border p-6">
+                  <h3 className="text-base font-semibold">{f.title}</h3>
+                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="border-border border-b">
           <div className="mx-auto max-w-6xl px-6 py-20">
             <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">
@@ -386,9 +593,11 @@ export default function LandingPage() {
                 </div>
                 <ul className="grid gap-3 text-sm md:border-l md:border-border md:pl-10 sm:grid-cols-2">
                   {[
+                    'Monorepo-aware — one config, every .env in the repo',
                     'Unlimited projects & environments',
                     'Unlimited members (no per-seat charge)',
                     'Multi-recipient encryption — every member can decrypt',
+                    'Service tokens + GitHub Action for CI/CD',
                     'Audit log of every push & pull',
                     `${DEFAULTS.softDeleteRetentionDays}-day soft-delete window`,
                     'Personal workspace at /me + as many team workspaces as you want',

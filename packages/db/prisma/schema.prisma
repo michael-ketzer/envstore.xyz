@@ -319,9 +319,15 @@ model WorkspaceToken {
   recipient       String        // public age recipient (or ssh-ed25519 key)
   recipientKind   RecipientKind @default(AGE_X25519)
   // Coarse permission flags. v1 only has "read" and "write"; we keep the
-  // shape so finer-grained scoping (per-project, per-env) can layer on later
-  // without a migration.
+  // shape so finer-grained scoping (per-env) can layer on later without a
+  // migration.
   scopes          String[]      @default(["read", "write"])
+  // Project-scope allowlist. Empty array = token authorizes every project
+  // in the workspace (today's default). Non-empty = strict allowlist: token
+  // can only act on these project IDs, and pushes to projects OUTSIDE this
+  // set will not encrypt to this token's recipient (filtered server-side in
+  // the /recipients response).
+  scopedProjectIds String[]     @default([])
   expiresAt       DateTime?     // nullable = no expiry (discouraged but allowed)
   revokedAt       DateTime?     // immediate revocation; auth path rejects
   lastUsedAt      DateTime?

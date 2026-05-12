@@ -24,6 +24,7 @@ import {
   authenticateBearer,
   notFound,
   resolveWorkspaceForAuth,
+  tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
@@ -75,6 +76,9 @@ export async function POST(req: Request, ctx: Ctx) {
     },
   });
   if (!project) return notFound('Project not found.');
+  if (!tokenAllowsProject(auth, project.id)) {
+    return apiError('Service token is not scoped to this project.', 403);
+  }
 
   // Billing gate — writes (pushes) require 'full' access. Trial-expired,
   // canceled-past-grace, etc. workspaces are read-only or locked.

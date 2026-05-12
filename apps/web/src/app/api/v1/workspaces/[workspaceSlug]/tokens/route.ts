@@ -84,7 +84,8 @@ export async function POST(req: Request, ctx: Ctx) {
     input: parsed.data,
   });
   if (!result.ok) {
-    return apiError(result.message, 400);
+    const status = result.reason === 'unknown-project' ? 400 : 400;
+    return apiError(result.message, status);
   }
   await recordAudit({
     workspaceId: ws.id,
@@ -92,7 +93,11 @@ export async function POST(req: Request, ctx: Ctx) {
     action: 'workspaceToken.create',
     resourceType: 'workspaceToken',
     resourceId: result.token.id,
-    metadata: { name: result.token.name, expiresAt: result.token.expiresAt?.toISOString() ?? null },
+    metadata: {
+      name: result.token.name,
+      expiresAt: result.token.expiresAt?.toISOString() ?? null,
+      scopedProjects: result.token.scopedProjects.map((p) => p.slug),
+    },
   });
   // The bearer is returned exactly once — the only opportunity the caller has
   // to save it. Subsequent GETs never include it.
@@ -102,6 +107,7 @@ export async function POST(req: Request, ctx: Ctx) {
       name: result.token.name,
       recipient: result.token.recipient,
       scopes: result.token.scopes,
+      scopedProjects: result.token.scopedProjects,
       expiresAt: result.token.expiresAt?.toISOString() ?? null,
       lastUsedAt: null,
       revokedAt: null,

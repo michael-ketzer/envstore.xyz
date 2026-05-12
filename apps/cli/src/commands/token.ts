@@ -51,9 +51,10 @@ async function resolveWorkspaceSlug(args: Args): Promise<string> {
 
 async function create(args: Args): Promise<void> {
   const name = args.positional[0];
-  if (!name) throw new UsageError('Usage: envstore token create <name> [--workspace <slug>]');
+  if (!name) throw new UsageError('Usage: envstore token create <name> [--workspace <slug>] [--projects <slugs>]');
   const workspaceSlug = await resolveWorkspaceSlug(args);
   const expiresInDays = numberFlag(args.flags['expires']);
+  const projects = parseProjectsFlag(args.flags['projects']);
 
   // Generate the age keypair LOCALLY. The private half never leaves this
   // process — server only gets the public recipient.
@@ -63,7 +64,12 @@ async function create(args: Args): Promise<void> {
   const client = makeClient(apiUrl);
   const created = await client.post<CreateResponse>(
     `/api/v1/workspaces/${workspaceSlug}/tokens`,
-    { name, recipient, ...(expiresInDays !== undefined ? { expiresInDays } : {}) },
+    {
+      name,
+      recipient,
+      ...(expiresInDays !== undefined ? { expiresInDays } : {}),
+      ...(projects.length > 0 ? { projects } : {}),
+    },
   );
 
   // The bearer + private key are printed exactly once. We don't write them
@@ -78,13 +84,29 @@ async function create(args: Args): Promise<void> {
   console.log(`  ${c.gray('ENVSTORE_TOKEN=')}${created.token}`);
   console.log(`  ${c.gray('ENVSTORE_IDENTITY=')}${identity}`);
   console.log();
+  const scopeDescription =
+    created.scopedProjects && created.scopedProjects.length > 0
+      ? created.scopedProjects.map((p) => p.slug).join(', ')
+      : 'all projects';
   muted(
     `Expires: ${created.expiresAt ? new Date(created.expiresAt).toISOString().slice(0, 10) : 'never'} · ` +
-      `Scopes: ${created.scopes.join(', ')}`,
+      `Scope: ${scopeDescription} · ` +
+      `Permissions: ${created.scopes.join(', ')}`,
   );
   muted(
     `Once configured, the runner can \`envstore pull\` from this workspace — pushes will encrypt to this identity alongside human members.`,
   );
+}
+
+// Parse the --projects flag value. Accepts comma-separated slugs:
+//   --projects test
+//   --projects test,staging
+function parseProjectsFlag(value: string | true | undefined): string[] {
+  if (typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 async function list(args: Args): Promise<void> {
@@ -111,8 +133,12 @@ async function list(args: Args): Promise<void> {
     const expires = t.expiresAt
       ? new Date(t.expiresAt).toISOString().slice(0, 10)
       : c.gray('—');
+    const scope =
+      t.scopedProjects && t.scopedProjects.length > 0
+        ? t.scopedProjects.map((p) => p.slug).join(',')
+        : c.gray('all projects');
     console.log(
-      `  ${c.cyan(t.id.padEnd(28))} ${t.name.padEnd(24)} ${status.padEnd(20)} last:${lastUsed} expires:${expires}`,
+      `  ${c.cyan(t.id.padEnd(28))} ${t.name.padEnd(20)} ${status.padEnd(20)} last:${lastUsed} expires:${expires}  scope:${scope}`,
     );
   }
 }

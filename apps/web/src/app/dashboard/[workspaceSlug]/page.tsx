@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { ChevronRight, Folder } from 'lucide-react';
+import { AlertCircle, ChevronRight, Folder } from 'lucide-react';
 
 import { buttonVariants } from '@envstore/ui';
 import { PERSONAL_WORKSPACE_URL_SLUG } from '@envstore/shared';
 
+import { CodeBlock } from '@/components/code-block';
 import { requireSession } from '@/lib/auth-helpers';
+import { computeRekeyStatus } from '@/lib/rekey-status';
 import { getWorkspaceForUser } from '@/lib/workspaces';
 
 export async function generateMetadata({
@@ -49,6 +51,7 @@ export default async function WorkspacePage({
 
   const urlSlug = workspaceSlug;
   const isPersonal = ws.type === 'PERSONAL';
+  const rekeyStatus = await computeRekeyStatus(ws.id);
 
   return (
     <div className="space-y-10">
@@ -135,6 +138,10 @@ export default async function WorkspacePage({
         />
         <Stat label="Soft-delete window" value={`${ws.softDeleteRetentionDays}d`} />
       </dl>
+
+      {rekeyStatus.staleCount > 0 ? (
+        <RekeyBanner staleCount={rekeyStatus.staleCount} workspaceSlug={urlSlug} />
+      ) : null}
 
       <section>
         <div className="flex items-baseline justify-between">
@@ -336,6 +343,39 @@ function ProjectList({
         </li>
       ))}
     </ul>
+  );
+}
+
+function RekeyBanner({
+  staleCount,
+  workspaceSlug: _workspaceSlug,
+}: {
+  staleCount: number;
+  workspaceSlug: string;
+}) {
+  return (
+    <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-5">
+      <div className="flex items-start gap-3">
+        <AlertCircle
+          aria-hidden
+          className="mt-0.5 h-5 w-5 shrink-0 text-yellow-700 dark:text-yellow-300"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">
+            {staleCount} env version{staleCount === 1 ? '' : 's'} encrypted to an out-of-date
+            recipient set.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Someone joined, left, or rotated keys — existing ciphertext is still only readable
+            by yesterday's recipients. From a repo with this workspace's{' '}
+            <code className="font-mono">envstore.json</code>, run:
+          </p>
+          <div className="mt-3">
+            <CodeBlock code="envstore rekey" label="Copy rekey command" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -22,8 +22,19 @@ export async function GET(req: Request, ctx: Ctx) {
   const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
 
+  // For a project-scoped service token, restrict the listing to the projects
+  // the token can actually act on — listing more would let a leaked token
+  // enumerate the workspace's project namespace.
+  const idFilter =
+    auth.kind === 'workspace-token' && auth.token.scopedProjectIds.length > 0
+      ? { in: auth.token.scopedProjectIds }
+      : undefined;
   const projects = await prisma.project.findMany({
-    where: { workspaceId: ws.id, deletedAt: null },
+    where: {
+      workspaceId: ws.id,
+      deletedAt: null,
+      ...(idFilter ? { id: idFilter } : {}),
+    },
     orderBy: { createdAt: 'asc' },
     select: {
       slug: true,

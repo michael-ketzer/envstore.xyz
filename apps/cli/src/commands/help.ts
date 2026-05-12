@@ -75,6 +75,7 @@ const SECTIONS: ReadonlyArray<Section> = [
     title: 'CI / service tokens',
     entries: [
       ['token create <name>', 'Mint a workspace-scoped service token (one-shot output)'],
+      ['token create <name> --projects test,staging', 'Restrict the token to specific projects'],
       ['token list', 'List service tokens for the workspace'],
       ['token revoke <id>', 'Revoke a service token immediately'],
     ],

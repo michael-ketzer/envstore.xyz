@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { sha256Hex } from '@envstore/crypto/hash';
 
 import { makeDbMock } from '@/test/db-mock';
+import { makeR2Mock } from '@/test/r2-mock';
 
 const fakePrisma = {
   workspace: { findFirst: mock() },
@@ -23,10 +24,7 @@ const fakePresignGet = mock();
 
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
-mock.module('@/lib/r2', () => ({
-  presignGet: fakePresignGet,
-  R2NotConfiguredError: class extends Error {},
-}));
+mock.module('@/lib/r2', () => makeR2Mock({ presignGet: fakePresignGet }));
 
 const { GET } = await import('./route');
 

@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { FakePrismaKnownError, makeDbMock } from '@/test/db-mock';
+import { makePaddleMock } from '@/test/paddle-mock';
 
 const fakePrisma = {
   paddleWebhookEvent: {
@@ -46,10 +47,7 @@ const originalConsoleError = console.error;
 
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
-mock.module('@/lib/paddle', () => ({
-  verifyAndParseWebhook: fakeVerify,
-  BillingNotConfiguredError: class extends Error {},
-}));
+mock.module('@/lib/paddle', () => makePaddleMock({ verifyAndParseWebhook: fakeVerify }));
 
 const { POST } = await import('./route');
 

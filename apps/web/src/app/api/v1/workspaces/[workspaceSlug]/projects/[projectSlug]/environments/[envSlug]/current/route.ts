@@ -126,9 +126,9 @@ export async function POST(req: Request, ctx: Ctx) {
       });
   if (!target) return notFound('Version not found.');
 
-  // No-op when the target IS already current. Return 200 with a flag so
-  // CLI / UI can show "already at that version" instead of re-rendering
-  // as if a change happened.
+  // Cheap no-op short-circuit using the outer-tx read. Saves a transaction
+  // round-trip in the common case. The transaction below re-checks under
+  // a lock — see the compare-and-swap below.
   if (environment.currentVersionId === target.id) {
     return Response.json({
       ok: true,
@@ -139,18 +139,28 @@ export async function POST(req: Request, ctx: Ctx) {
     });
   }
 
-  // We capture the previous pointer for audit so an admin can see the
-  // exact step that was undone. The pointer flip and the audit insert
-  // run in one transaction: if the audit write fails, the pointer
-  // doesn't budge — no silently-undone-state-without-a-trail.
-  // recordAudit() uses the global prisma client and would commit
-  // outside this transaction; we inline the create on `tx` instead.
-  const previousVersionId = environment.currentVersionId;
-  await prisma.$transaction(async (tx) => {
-    await tx.environment.update({
+  // Compare-and-swap the pointer inside one transaction. We re-read
+  // currentVersionId under the tx (so the audit's `previousVersionId`
+  // reflects the value we actually replaced — not a stale snapshot from
+  // outside the tx) and use updateMany with both `id` AND
+  // `currentVersionId` in the where clause. If another rollback wins
+  // the race in between, our updateMany affects 0 rows and we treat
+  // this call as a no-op rather than emitting an audit for a change we
+  // didn't make.
+  const result = await prisma.$transaction(async (tx) => {
+    const fresh = await tx.environment.findUnique({
       where: { id: environment.id },
+      select: { currentVersionId: true, slug: true },
+    });
+    if (!fresh) return { changed: false } as const;
+    if (fresh.currentVersionId === target.id) return { changed: false } as const;
+
+    const updated = await tx.environment.updateMany({
+      where: { id: environment.id, currentVersionId: fresh.currentVersionId },
       data: { currentVersionId: target.id },
     });
+    if (updated.count === 0) return { changed: false } as const;
+
     await tx.auditLog.create({
       data: {
         workspaceId: project.workspaceId,
@@ -159,18 +169,19 @@ export async function POST(req: Request, ctx: Ctx) {
         resourceType: 'environment',
         resourceId: environment.id,
         metadata: {
-          env: environment.slug,
+          env: fresh.slug,
           rolledBackTo: target.version,
-          previousVersionId: previousVersionId ?? null,
+          previousVersionId: fresh.currentVersionId ?? null,
           via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
         },
       },
     });
+    return { changed: true } as const;
   });
 
   return Response.json({
     ok: true,
-    noop: false,
+    noop: !result.changed,
     versionId: target.id,
     version: target.version,
     environmentSlug: environment.slug,

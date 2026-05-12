@@ -12,11 +12,12 @@ import { WORKSPACE_TOKEN_PREFIX } from '@envstore/shared';
 
 import { makeDbMock } from '@/test/db-mock';
 
-// The route's pointer flip + audit insert happen inside one
-// prisma.$transaction so they commit together. The mock tx exposes the
-// same model accessors the route uses (environment.update, auditLog.create).
+// The route does a compare-and-swap inside one prisma.$transaction:
+//   tx.environment.findUnique   (re-read under tx for the actual previousVersionId)
+//   tx.environment.updateMany   (CAS flip — count=0 means another writer raced past)
+//   tx.auditLog.create          (only fires when CAS won)
 const fakeTx = {
-  environment: { update: mock() },
+  environment: { findUnique: mock(), updateMany: mock() },
   auditLog: { create: mock() },
 };
 const fakeTransaction = mock(async (cb: (tx: typeof fakeTx) => unknown) => cb(fakeTx));
@@ -58,8 +59,11 @@ beforeEach(() => {
   fakePrisma.cliToken.update.mockResolvedValue({});
   fakePrisma.workspaceToken.update.mockResolvedValue({});
   fakePrisma.workspace.findFirst.mockResolvedValue({ id: 'ws_1', slug: 'acme' });
-  fakeTx.environment.update.mockResolvedValue({});
   fakeTx.auditLog.create.mockResolvedValue({});
+  // CAS happy default: the in-tx re-read sees the same currentVersionId
+  // the outer-tx read did, and the updateMany succeeds (count=1). Each
+  // test that wants to simulate a race overrides these per-call.
+  fakeTx.environment.updateMany.mockResolvedValue({ count: 1 });
 });
 
 async function stageUserAuth(bearer: string) {
@@ -187,7 +191,7 @@ describe('POST /current — scope + billing', () => {
     stageHappyProject();
     const res = await POST(postReq(bearer, { version: 1 }), ctx());
     expect(res.status).toBe(403);
-    expect(fakeTx.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.environment.updateMany).not.toHaveBeenCalled();
   });
 
   test('billing read-only tier (trial expired) → 402, no update', async () => {
@@ -207,7 +211,7 @@ describe('POST /current — scope + billing', () => {
     });
     const res = await POST(postReq('user-bearer', { version: 1 }), ctx());
     expect(res.status).toBe(402);
-    expect(fakeTx.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.environment.updateMany).not.toHaveBeenCalled();
   });
 
   test('environment not found → 404', async () => {
@@ -229,12 +233,12 @@ describe('POST /current — scope + billing', () => {
     fakePrisma.envFileVersion.findUnique.mockResolvedValueOnce(null);
     const res = await POST(postReq('user-bearer', { version: 99 }), ctx());
     expect(res.status).toBe(404);
-    expect(fakeTx.environment.update).not.toHaveBeenCalled();
+    expect(fakeTx.environment.updateMany).not.toHaveBeenCalled();
   });
 });
 
 describe('POST /current — happy path + no-op', () => {
-  test('rolling back to a real older version → 200, pointer flipped, audit logged', async () => {
+  test('rolling back to a real older version → 200, CAS flip + audit with fresh previousVersionId', async () => {
     await stageUserAuth('user-bearer');
     stageHappyProject();
     fakePrisma.environment.findFirst.mockResolvedValueOnce({
@@ -243,14 +247,23 @@ describe('POST /current — happy path + no-op', () => {
       currentVersionId: 'ver_8',
     });
     fakePrisma.envFileVersion.findUnique.mockResolvedValueOnce({ id: 'ver_5', version: 5 });
+    // In-tx re-read returns the same currentVersionId as the outer-tx
+    // read — no concurrent rollback landed between them. updateMany
+    // succeeds with count=1 (from the beforeEach default).
+    fakeTx.environment.findUnique.mockResolvedValueOnce({
+      currentVersionId: 'ver_8',
+      slug: 'production',
+    });
 
     const res = await POST(postReq('user-bearer', { version: 5 }), ctx());
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; noop: boolean; version: number };
     expect(body).toMatchObject({ ok: true, noop: false, version: 5 });
 
-    expect(fakeTx.environment.update).toHaveBeenCalledWith({
-      where: { id: 'env_prod' },
+    // CAS shape: where includes BOTH id AND the current pointer value
+    // we read; data flips to the target.
+    expect(fakeTx.environment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'env_prod', currentVersionId: 'ver_8' },
       data: { currentVersionId: 'ver_5' },
     });
     const auditCall = fakeTx.auditLog.create.mock.calls[0]?.[0] as {
@@ -264,7 +277,7 @@ describe('POST /current — happy path + no-op', () => {
     });
   });
 
-  test('target version is ALREADY current → 200 noop, no update, no audit', async () => {
+  test('outer-tx fast-path no-op (already current per outer read) → 200, no transaction work', async () => {
     await stageUserAuth('user-bearer');
     stageHappyProject();
     fakePrisma.environment.findFirst.mockResolvedValueOnce({
@@ -278,7 +291,60 @@ describe('POST /current — happy path + no-op', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { noop: boolean };
     expect(body.noop).toBe(true);
-    expect(fakeTx.environment.update).not.toHaveBeenCalled();
+    // The outer fast path short-circuits before we even open the tx.
+    expect(fakeTransaction).not.toHaveBeenCalled();
+    expect(fakeTx.environment.updateMany).not.toHaveBeenCalled();
+    expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  test('in-tx no-op: another rollback raced and now matches our target → noop:true, no audit', async () => {
+    // Outer read sees ver_8; we open the tx; the in-tx re-read sees
+    // ver_5 (because a concurrent rollback to ver_5 won). Our target
+    // is ver_5, so the CAS path bails: no updateMany, no audit.
+    await stageUserAuth('user-bearer');
+    stageHappyProject();
+    fakePrisma.environment.findFirst.mockResolvedValueOnce({
+      id: 'env_prod',
+      slug: 'production',
+      currentVersionId: 'ver_8',
+    });
+    fakePrisma.envFileVersion.findUnique.mockResolvedValueOnce({ id: 'ver_5', version: 5 });
+    fakeTx.environment.findUnique.mockResolvedValueOnce({
+      currentVersionId: 'ver_5',
+      slug: 'production',
+    });
+
+    const res = await POST(postReq('user-bearer', { version: 5 }), ctx());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { noop: boolean };
+    expect(body.noop).toBe(true);
+    expect(fakeTx.environment.updateMany).not.toHaveBeenCalled();
+    expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  test('in-tx CAS conflict: race flipped pointer to a third value → updateMany.count=0, noop:true, no audit', async () => {
+    // Outer read sees ver_8; in-tx re-read STILL sees ver_8 (the
+    // racing writer hasn't committed yet); we issue the conditional
+    // updateMany but by the time it runs the race has won and the
+    // pointer is ver_9 — count comes back 0.
+    await stageUserAuth('user-bearer');
+    stageHappyProject();
+    fakePrisma.environment.findFirst.mockResolvedValueOnce({
+      id: 'env_prod',
+      slug: 'production',
+      currentVersionId: 'ver_8',
+    });
+    fakePrisma.envFileVersion.findUnique.mockResolvedValueOnce({ id: 'ver_5', version: 5 });
+    fakeTx.environment.findUnique.mockResolvedValueOnce({
+      currentVersionId: 'ver_8',
+      slug: 'production',
+    });
+    fakeTx.environment.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const res = await POST(postReq('user-bearer', { version: 5 }), ctx());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { noop: boolean };
+    expect(body.noop).toBe(true);
     expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
   });
 
@@ -291,6 +357,10 @@ describe('POST /current — happy path + no-op', () => {
       currentVersionId: 'ver_8',
     });
     fakePrisma.envFileVersion.findFirst.mockResolvedValueOnce({ id: 'ver_5', version: 5 });
+    fakeTx.environment.findUnique.mockResolvedValueOnce({
+      currentVersionId: 'ver_8',
+      slug: 'production',
+    });
 
     const res = await POST(postReq('user-bearer', { versionId: 'ver_5' }), ctx());
     expect(res.status).toBe(200);
@@ -310,6 +380,10 @@ describe('POST /current — happy path + no-op', () => {
       currentVersionId: 'ver_8',
     });
     fakePrisma.envFileVersion.findUnique.mockResolvedValueOnce({ id: 'ver_5', version: 5 });
+    fakeTx.environment.findUnique.mockResolvedValueOnce({
+      currentVersionId: 'ver_8',
+      slug: 'production',
+    });
 
     const res = await POST(postReq(bearer, { version: 5 }), ctx());
     expect(res.status).toBe(200);

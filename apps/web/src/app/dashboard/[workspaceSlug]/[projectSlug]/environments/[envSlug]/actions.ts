@@ -69,19 +69,33 @@ export async function rollbackToVersionAction(
   });
   if (!target) return { ok: false, error: 'Version not found.' };
 
+  // Cheap no-op short-circuit. The transaction below re-checks under
+  // its own read so two concurrent rollbacks can't both emit an audit
+  // for the same effective change.
   if (environment.currentVersionId === target.id) {
     return { ok: true, error: null };
   }
 
-  // Pointer flip + audit must commit together. recordAudit() uses the
-  // global prisma client and would land outside this transaction; we
-  // inline the audit-create on `tx` so a failure rolls both back.
-  const previousVersionId = environment.currentVersionId;
+  // Compare-and-swap pointer flip + audit in one transaction. The
+  // re-read inside `tx` makes the audit's `previousVersionId` reflect
+  // the value we actually replaced; the updateMany's `where` clause
+  // (id + currentVersionId) ensures we ONLY write — and audit — when
+  // no other rollback has raced in. A losing CAS returns success with
+  // no audit emitted, matching the API route's behavior.
   await prisma.$transaction(async (tx) => {
-    await tx.environment.update({
+    const fresh = await tx.environment.findUnique({
       where: { id: environment.id },
+      select: { currentVersionId: true, slug: true },
+    });
+    if (!fresh) return;
+    if (fresh.currentVersionId === target.id) return;
+
+    const updated = await tx.environment.updateMany({
+      where: { id: environment.id, currentVersionId: fresh.currentVersionId },
       data: { currentVersionId: target.id },
     });
+    if (updated.count === 0) return;
+
     await tx.auditLog.create({
       data: {
         workspaceId: project.workspaceId,
@@ -90,9 +104,9 @@ export async function rollbackToVersionAction(
         resourceType: 'environment',
         resourceId: environment.id,
         metadata: {
-          env: environment.slug,
+          env: fresh.slug,
           rolledBackTo: target.version,
-          previousVersionId: previousVersionId ?? null,
+          previousVersionId: fresh.currentVersionId ?? null,
           via: 'dashboard',
         },
       },

@@ -7,14 +7,18 @@
 // it's older than the cap (e.g. after a rollback to an ancient version),
 // it still survives.
 //
-// R2 cleanup happens BEFORE the DB row delete so a crash mid-sweep leaves
-// the DB row referencing a still-present R2 object, which is recoverable
-// on the next pass — the inverse (DB row gone but R2 object lingering)
-// would leak storage cost forever with no row to walk back from.
+// The DB row delete and the candidate selection happen inside ONE
+// transaction with `SELECT ... FOR UPDATE` on the Environment row, so a
+// concurrent rollback can't flip currentVersionId to a candidate row
+// between our snapshot and the delete. R2 object cleanup happens AFTER
+// the transaction commits. If R2 cleanup fails the DB rows are already
+// gone, so the worst case is orphaned R2 blobs — recoverable by the
+// retention-sweep cron on a later pass. The reverse (DB row pointing at
+// a deleted blob) would break pull and is deliberately avoided.
 //
 // Inline-on-finalize was chosen over cron because:
 //   - constant per-push work (a few seconds of R2 deletes at most)
-//   - no drift between R2 and DB
+//   - the prune transaction sees the just-finalized version as current
 //   - no separate cron piece to monitor
 //
 // The retention-sweep cron is unchanged; it still owns the soft-delete →

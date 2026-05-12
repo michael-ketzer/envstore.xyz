@@ -76,6 +76,15 @@ metadata (size, sha256, timestamps), and bearer tokens. Lose every copy of
 your secret key and your data is permanently unrecoverable — there is no
 recovery flow, by design.
 
+## Documentation
+
+- **[Concepts](docs/concepts.md)** — workspace / project / environment /
+  recipient / identity / version / token, and how they relate.
+- **[Security model](docs/security-model.md)** — what zero-knowledge means
+  in practice, the trust-on-first-use defense, threat scenarios.
+- **[Command reference](docs/commands.md)** — every CLI command with
+  synopsis, flags, and examples.
+
 ## Self-hosting
 
 Requirements:

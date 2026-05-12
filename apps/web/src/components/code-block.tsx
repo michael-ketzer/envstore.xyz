@@ -11,11 +11,17 @@ export function CodeBlock({
   copyText,
   className,
   label = 'Copy command',
+  copyable = true,
 }: {
   code: string;
   copyText?: string;
   className?: string;
   label?: string;
+  // Some blocks are illustrative — example config files, simulated terminal
+  // sessions — where a copy button is misleading (the user would be copying
+  // placeholders or shell output, not a runnable command). Pass copyable=false
+  // to omit the button and reclaim the right padding for the content.
+  copyable?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -40,22 +46,29 @@ export function CodeBlock({
         className,
       )}
     >
-      <pre className="overflow-x-auto whitespace-pre px-4 py-3 pr-12 font-mono text-xs leading-relaxed text-foreground/90">
+      <pre
+        className={cn(
+          'overflow-x-auto whitespace-pre px-4 py-3 font-mono text-xs leading-relaxed text-foreground/90',
+          copyable && 'pr-12',
+        )}
+      >
         <code>{code}</code>
       </pre>
-      <button
-        type="button"
-        onClick={onCopy}
-        aria-label={copied ? 'Copied' : label}
-        title={copied ? 'Copied' : label}
-        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-background/80 text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5" aria-hidden />
-        ) : (
-          <Copy className="h-3.5 w-3.5" aria-hidden />
-        )}
-      </button>
+      {copyable ? (
+        <button
+          type="button"
+          onClick={onCopy}
+          aria-label={copied ? 'Copied' : label}
+          title={copied ? 'Copied' : label}
+          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-background/80 text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <Copy className="h-3.5 w-3.5" aria-hidden />
+          )}
+        </button>
+      ) : null}
     </div>
   );
 }

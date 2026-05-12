@@ -161,14 +161,23 @@ const alsoShipped: Array<{ title: string; body: string }> = [
 ];
 
 const comparison: Array<{ row: string; envstore: string; others: string }> = [
-  { row: 'Pricing', envstore: `$${priceDollars} / workspace`, others: '$5–8 / user / month' },
+  { row: 'Pricing', envstore: `$${priceDollars} / workspace`, others: '$5–21 / user / month' },
   { row: 'Team members', envstore: 'Unlimited', others: 'Per-seat' },
+  {
+    row: 'Monorepo support',
+    envstore: 'One envstore.json — init walks every .env',
+    others: 'One project per service, set up by hand',
+  },
   {
     row: 'Server can decrypt your files',
     envstore: 'No. By construction.',
     others: 'Yes — "encrypted at rest"',
   },
-  { row: 'License', envstore: 'AGPL v3 — fully readable', others: 'Closed source' },
+  {
+    row: 'Compromised API can read your next push',
+    envstore: 'No — CLI checks the recipient set first',
+    others: 'Yes — server already had the key',
+  },
   { row: 'Key custody', envstore: 'You hold the key', others: 'Vendor holds the key' },
   {
     row: 'Web dashboard can leak secrets',
@@ -176,9 +185,9 @@ const comparison: Array<{ row: string; envstore: string; others: string }> = [
     others: 'XSS / session theft',
   },
   {
-    row: 'CLI as primary interface',
-    envstore: 'Yes, required for writes',
-    others: 'Often an afterthought',
+    row: 'Runtime integration',
+    envstore: 'Writes a plain .env — your app reads it like always',
+    others: '"vendor run -- your-app" wrapper or SDK injection',
   },
 ];
 
@@ -192,6 +201,20 @@ const faq: Array<{ q: string; a: React.ReactNode }> = [
         do not hold any private key. There is no decrypt endpoint, no admin override, no support
         backdoor. If we wanted to read your file we would need to compromise your laptop, not our
         server.
+      </>
+    ),
+  },
+  {
+    q: `What stops a compromised envstore from quietly adding its own key to your next push?`,
+    a: (
+      <>
+        Nothing server-side — which is exactly why the CLI does. Every workstation caches the
+        recipients it has encrypted to. If our API ever returns a public key your CLI hasn't seen
+        before — an attacker's, ours, anyone's — your push flags the new entry and waits for you to
+        confirm before encrypting. In CI the push fails outright unless you've passed{' '}
+        <code className={inlineCode}>--trust-new</code>. The &ldquo;compromised server silently adds
+        a key to read future pushes&rdquo; attack is real in every end-to-end-encrypted vault that
+        takes the server's recipient list on faith. envstore doesn't.
       </>
     ),
   },
@@ -468,7 +491,7 @@ export default function LandingPage() {
                 <CodeBlock
                   className="mt-3 w-full min-w-0"
                   code={monorepoConfigExample}
-                  label="Copy envstore.json example"
+                  copyable={false}
                 />
               </div>
               <div className="min-w-0">
@@ -478,7 +501,7 @@ export default function LandingPage() {
                 <CodeBlock
                   className="mt-3 w-full min-w-0"
                   code={monorepoCliExample}
-                  label="Copy CLI example"
+                  copyable={false}
                 />
               </div>
             </div>

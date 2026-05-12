@@ -48,7 +48,12 @@ release notes. Just tell us.
 We assume:
 
 - The server (Next.js app + Postgres + R2) can be fully compromised. An
-  attacker with database + R2 access still cannot decrypt env files.
+  attacker with database + R2 access cannot decrypt existing env files. An
+  attacker with active control of the API can attempt to widen the audience
+  of *future* pushes by injecting a recipient into the `/recipients`
+  response — the CLI defends against this with a local trust cache that
+  surfaces unfamiliar recipients before encryption (see "What we already
+  do").
 - The user's local machine is trusted. The age secret key, CLI bearer token,
   and any cached identity live there.
 - Transport is HTTPS only. We set HSTS with `includeSubDomains; preload`.
@@ -91,6 +96,15 @@ itself should be reported [upstream](https://github.com/FiloSottile/age/security
 - Workspace-membership gate on every cross-user resource
 - Setup codes gated by workspace membership at redemption time (not single-use,
   membership IS the security boundary)
+- CLI caches the trusted recipient set per project (`~/.config/envstore/trust.json`,
+  mode 0600) and requires explicit confirmation when the server returns a
+  new recipient on a subsequent push. This is the guardrail against the
+  active-server-compromise variant of the threat: a compromised API could
+  otherwise inject an attacker-controlled `age1…` into the recipient list,
+  silently widening the audience of future ciphertext. First contact is
+  TOFU; subsequent additions prompt; CI/non-interactive runs can pass
+  `--trust-new` after out-of-band review. See `envstore trust list` for
+  what's cached and `envstore trust reset` to re-bootstrap.
 
 ## Hall of fame
 

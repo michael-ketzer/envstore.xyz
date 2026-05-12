@@ -25,7 +25,7 @@
 //   4. Decrypt with local age identity.
 //   5. Write to disk (mode 0600), refusing to overwrite without --force.
 
-import { chmod, mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { basename, dirname, relative, resolve } from 'node:path';
 
 import { decryptToString } from '@envstore/crypto/age';
@@ -45,6 +45,7 @@ import { ApiError, CliError } from '../lib/errors';
 import { matchFiles } from '../lib/files-filter';
 import { loadIdentity } from '../lib/identity';
 import { c, info, muted, success, warn } from '../lib/output';
+import { writeSecretFile } from '../lib/secret-file';
 
 type PullResponse = {
   versionId: string;
@@ -241,10 +242,11 @@ async function pullOneFile(args: {
     }
   }
   // Ensure parent dir exists — important in monorepo mode where the path can
-  // be deeply nested (apps/web/.env.local).
+  // be deeply nested (apps/web/.env.local). The actual write goes through
+  // writeSecretFile so the plaintext lands with mode 0o600 even on a
+  // --force overwrite of a pre-existing loose file.
   await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, plaintext);
-  await chmod(outPath, 0o600);
+  await writeSecretFile(outPath, plaintext);
 
   const displayOut = relative(process.cwd(), outPath) || basename(outPath);
   success(`Pulled ${c.cyan(meta.environmentSlug)} v${meta.version} → ${displayOut}`);

@@ -2,7 +2,7 @@
 // The private identity NEVER leaves the user's machine. The PUBLIC recipient
 // is what gets registered with the server.
 
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
 
 import { generateIdentity } from '@envstore/crypto/age';
 
@@ -13,6 +13,7 @@ import {
   keychainGet,
   keychainSet,
 } from './keychain';
+import { writeSecretFile } from './secret-file';
 
 const KEYCHAIN_SERVICE = 'envstore.identity';
 const KEYCHAIN_ACCOUNT = 'default';
@@ -35,13 +36,12 @@ export async function generateAndStoreIdentity(): Promise<StoredIdentity> {
     }
   }
 
-  await mkdir(configDir(), { recursive: true });
+  await mkdir(configDir(), { recursive: true, mode: 0o700 });
   const payload =
     `# created: ${new Date().toISOString()}\n` +
     `# public key: ${recipient}\n` +
     `${identity}\n`;
-  await writeFile(identityFile(), payload);
-  await chmod(identityFile(), 0o600);
+  await writeSecretFile(identityFile(), payload);
   return { identity, recipient, source: 'file' };
 }
 
@@ -118,8 +118,7 @@ export function formatExportableIdentity(stored: StoredIdentity): string {
 export async function exportIdentityToFile(path: string): Promise<void> {
   const stored = await loadIdentity();
   if (!stored) throw new Error('No identity to export. Run `envstore identity init` first.');
-  await writeFile(path, formatExportableIdentity(stored));
-  await chmod(path, 0o600);
+  await writeSecretFile(path, formatExportableIdentity(stored));
 }
 
 export async function getExportableIdentity(): Promise<{ stored: StoredIdentity; payload: string }> {
@@ -160,9 +159,8 @@ export async function importIdentityFromText(text: string): Promise<StoredIdenti
       // fall through to file
     }
   }
-  await mkdir(configDir(), { recursive: true });
-  await writeFile(identityFile(), `${identity}\n`);
-  await chmod(identityFile(), 0o600);
+  await mkdir(configDir(), { recursive: true, mode: 0o700 });
+  await writeSecretFile(identityFile(), `${identity}\n`);
   return { identity, recipient, source: 'file' };
 }
 

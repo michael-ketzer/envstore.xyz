@@ -14,6 +14,7 @@ import {
   softDeleteProjectGroup,
   updateProjectGroup,
 } from '@/lib/project-groups';
+import { hasAtLeastRole } from '@/lib/workspace-roles';
 
 type Ctx = { params: Promise<{ workspaceSlug: string; groupSlug: string }> };
 
@@ -89,6 +90,17 @@ export async function DELETE(req: Request, ctx: Ctx) {
 
   const ws = await resolveWorkspaceForAuth(userAuth, workspaceSlug);
   if (!ws) return notFound('Workspace not found.');
+
+  // Mirror the dashboard server action's gate — group deletes are
+  // destructive (cascade-affects every project in the group), so plain
+  // MEMBER auth isn't enough.
+  const membership = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: ws.id, userId: userAuth.user.id } },
+    select: { role: true },
+  });
+  if (!membership || !hasAtLeastRole(membership.role as 'OWNER' | 'ADMIN' | 'MEMBER', 'ADMIN')) {
+    return apiError('Only admins and owners can delete groups.', 403);
+  }
 
   const result = await softDeleteProjectGroup(ws.id, groupSlug);
   if (!result.ok) {

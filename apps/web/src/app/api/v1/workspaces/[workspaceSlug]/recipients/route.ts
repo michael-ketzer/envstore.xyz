@@ -63,7 +63,15 @@ export async function GET(req: Request, ctx: Ctx) {
       },
     }),
     prisma.workspaceToken.findMany({
-      where: { workspaceId: workspace.id, revokedAt: null },
+      // Expired tokens are excluded so future pushes never encrypt to a
+      // recipient whose API access has lapsed. Otherwise the holder of the
+      // private key could still decrypt newly-pushed ciphertext if they ever
+      // obtained it, even though their token can no longer pull it.
+      where: {
+        workspaceId: workspace.id,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
       select: {
         id: true,
         name: true,

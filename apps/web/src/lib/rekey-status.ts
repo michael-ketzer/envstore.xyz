@@ -43,7 +43,14 @@ export async function computeRekeyStatus(workspaceId: string): Promise<RekeyStat
       },
     }),
     prisma.workspaceToken.findMany({
-      where: { workspaceId, revokedAt: null },
+      // Mirror the recipient endpoint's filter — expired tokens are no longer
+      // valid recipients, so their absence is what makes affected versions
+      // count as stale and prompt rekey.
+      where: {
+        workspaceId,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
       select: { recipient: true, scopedProjectIds: true },
     }),
   ]);

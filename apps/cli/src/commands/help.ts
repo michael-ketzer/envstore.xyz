@@ -90,6 +90,16 @@ const SECTIONS: ReadonlyArray<Section> = [
     ],
   },
   {
+    title: 'Trust (local recipient cache)',
+    entries: [
+      ['trust list', 'Show the cached recipient set per project (defends against server-side injection)'],
+      ['trust reset', 'Forget the cached set for the current project (next push will TOFU)'],
+      ['trust reset --workspace <slug>', 'Forget every cached project under a workspace'],
+      ['trust reset --all', 'Wipe the whole trust cache on this machine'],
+      ['push --trust-new', 'Auto-accept newly-added recipients (for CI/automation)'],
+    ],
+  },
+  {
     title: 'About',
     entries: [
       ['licenses', 'Print third-party licenses bundled with envstore'],

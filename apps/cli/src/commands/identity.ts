@@ -221,7 +221,11 @@ async function identityRemove(args: Args): Promise<void> {
   const removed = await deleteIdentity();
   if (removed) {
     success('Local identity removed.');
-    muted('The recipient is still registered on the server — revoke it from the dashboard if you want to remove access entirely.');
+    muted(
+      'The recipient is still registered on the server — open Account → Recipients in the dashboard ' +
+        'and click Revoke to stop future pushes from encrypting to it, then run `envstore rekey` ' +
+        'so existing versions are re-encrypted without it.',
+    );
   } else {
     muted('No local identity to remove.');
   }

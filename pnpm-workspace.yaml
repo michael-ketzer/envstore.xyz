@@ -8,3 +8,14 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   sharp: true
+
+# Force transitive deps up to patched versions for advisories that the
+# direct upstreams (next, prisma) haven't picked up yet:
+#   - postcss <8.5.10 — XSS via unescaped </style> in CSS stringify
+#     (GHSA-qx2v-qp2m-jg93). Pinned by next@16.2.6.
+#   - @hono/node-server <1.19.13 — middleware bypass via repeated slashes
+#     in serveStatic (GHSA-92pp-h63x-v22m). Reachable only through
+#     prisma's dev tooling, but cleaner to upgrade.
+overrides:
+  postcss: ^8.5.14
+  '@hono/node-server': ^1.19.13

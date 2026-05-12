@@ -22,6 +22,7 @@ import { push } from './commands/push';
 import { rekey } from './commands/rekey';
 import { sync } from './commands/sync';
 import { token } from './commands/token';
+import { trust } from './commands/trust';
 import { whoami } from './commands/whoami';
 
 type Handler = (args: Args) => Promise<void>;
@@ -40,6 +41,7 @@ const COMMANDS: Record<string, Handler> = {
   rekey,
   sync,
   token,
+  trust,
   licenses,
   help,
 };

@@ -119,9 +119,9 @@ under [Roadmap](#roadmap).
 - [x] Rate limiting on auth endpoints, security headers, 365-day CLI token TTL
 - [x] Paddle billing integration (checkout, webhook, trial enforcement)
 - [ ] Version history + rollback UI; `envstore versions` / `envstore rollback`
-- [ ] `envstore share` — re-encrypt to current recipient set
-- [ ] Background cron for soft-delete cleanup
-- [ ] Automated tests
+- [x] `envstore rekey` — re-encrypt to current recipient set
+- [x] Background cron for soft-delete cleanup
+- [x] Automated tests
 - [x] Homebrew tap
 
 ## Security

@@ -4,6 +4,7 @@ import { prisma } from '@envstore/db';
 import { LIMITS } from '@envstore/shared';
 
 import { requireSession } from '@/lib/auth-helpers';
+import { RevokeRecipientButton } from './revoke-button';
 
 export const metadata: Metadata = {
   title: 'Recipients — envstore',
@@ -26,6 +27,12 @@ export default async function RecipientsPage() {
           <code className="font-mono">envstore identity register</code> if you already have an
           identity) on each machine. Cap: {LIMITS.maxRecipientsPerUser} per user.
         </p>
+        <p className="mt-2 max-w-2xl text-xs text-muted-foreground">
+          Lost a device or rotated a key? Revoke its recipient here. Future pushes stop
+          encrypting to it, and the workspace home will prompt you to run{' '}
+          <code className="font-mono">envstore rekey</code> so existing versions are
+          re-encrypted without it.
+        </p>
       </div>
 
       {recipients.length === 0 ? (
@@ -39,14 +46,17 @@ export default async function RecipientsPage() {
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
           {recipients.map((r) => (
-            <li key={r.id} className="px-5 py-3">
-              <div className="font-medium">{r.label}</div>
-              <div className="mt-0.5 font-mono text-xs text-muted-foreground break-all">
-                {r.recipient}
+            <li key={r.id} className="flex items-start justify-between gap-3 px-5 py-3">
+              <div className="min-w-0">
+                <div className="font-medium">{r.label}</div>
+                <div className="mt-0.5 font-mono text-xs text-muted-foreground break-all">
+                  {r.recipient}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {r.kind.toLowerCase()} · added {r.createdAt.toLocaleDateString()}
+                </div>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {r.kind.toLowerCase()} · added {r.createdAt.toLocaleDateString()}
-              </div>
+              <RevokeRecipientButton recipientId={r.id} label={r.label} />
             </li>
           ))}
         </ul>

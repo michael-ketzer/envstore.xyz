@@ -46,14 +46,9 @@ import { ApiError, CliError } from '../lib/errors';
 import { matchFiles } from '../lib/files-filter';
 import { c, info, muted, success, warn } from '../lib/output';
 import { askConfirm, askText, requireTty } from '../lib/prompt';
+import { applyTrustDecision, type RecipientInfo } from '../lib/trust';
 
-type Recipient = {
-  id: string;
-  recipient: string;
-  kind: 'AGE_X25519' | 'SSH_ED25519' | 'SSH_RSA';
-  label: string;
-  userEmail: string;
-};
+type Recipient = RecipientInfo;
 
 type PushInitResponse = {
   versionId: string;
@@ -78,10 +73,14 @@ export async function push(args: Args): Promise<void> {
   const apiUrl = await resolveApiUrl({ project: cfg.config });
   const client = makeClient(apiUrl);
   const { workspace } = cfg.config;
+  const trustNew = Boolean(args.flags['trust-new']);
 
   // Recipients are per-project once project-scoped tokens are in play. We
   // memoize per project slug so a single-project push hits /recipients once,
-  // and a monorepo push hits it once per distinct project.
+  // and a monorepo push hits it once per distinct project. The cache also
+  // remembers that we've already done the trust-diff check for this project
+  // in this invocation — multi-file pushes against the same project should
+  // not re-prompt per file.
   const recipientsCache = new Map<string, string[]>();
   const fetchRecipientsForProject = async (projectSlug: string): Promise<string[]> => {
     const cached = recipientsCache.get(projectSlug);
@@ -99,6 +98,14 @@ export async function push(args: Args): Promise<void> {
         },
       );
     }
+    // Trust check happens BEFORE we dedupe to strings — `applyTrustDecision`
+    // wants the full RecipientInfo[] (labels + emails) so it can describe
+    // unfamiliar entries to the user.
+    await applyTrustDecision(
+      { apiUrl, workspace, project: projectSlug },
+      res.recipients,
+      { trustNew },
+    );
     const recipients = Array.from(new Set(res.recipients.map((r) => r.recipient)));
     recipientsCache.set(projectSlug, recipients);
     return recipients;

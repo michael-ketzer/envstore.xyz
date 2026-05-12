@@ -2,7 +2,7 @@
 // Macs: macOS Keychain (service=envstore.token, account=<apiUrl>).
 // Elsewhere or as fallback: ~/.config/envstore/credentials.json (mode 600).
 
-import { mkdir, readFile, writeFile, unlink, chmod } from 'node:fs/promises';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { credentialsFile, configDir } from './paths';
@@ -12,6 +12,7 @@ import {
   keychainGet,
   keychainSet,
 } from './keychain';
+import { writeSecretFile } from './secret-file';
 
 const KEYCHAIN_SERVICE = 'envstore.token';
 
@@ -28,9 +29,8 @@ async function readFileCreds(): Promise<CredsFile> {
 }
 
 async function writeFileCreds(data: CredsFile): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
-  await writeFile(credentialsFile(), JSON.stringify(data, null, 2));
-  await chmod(credentialsFile(), 0o600);
+  await mkdir(configDir(), { recursive: true, mode: 0o700 });
+  await writeSecretFile(credentialsFile(), JSON.stringify(data, null, 2));
 }
 
 export async function saveToken(apiUrl: string, token: string): Promise<void> {

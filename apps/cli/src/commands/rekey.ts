@@ -34,10 +34,11 @@ import { findProjectConfig, resolveApiUrl } from '../lib/config';
 import { ApiError, CliError } from '../lib/errors';
 import { loadIdentity } from '../lib/identity';
 import { c, info, muted, success } from '../lib/output';
+import { applyTrustDecision, type RecipientInfo } from '../lib/trust';
 
 type RecipientsResponse = {
   workspace: { slug: string; type: 'PERSONAL' | 'TEAM' };
-  recipients: { recipient: string }[];
+  recipients: RecipientInfo[];
 };
 
 type PullResponse = {
@@ -83,6 +84,7 @@ export async function rekey(args: Args): Promise<void> {
   const client = makeClient(apiUrl);
   const { workspace } = cfg.config;
   const dryRun = Boolean(args.flags['dry-run']);
+  const trustNew = Boolean(args.flags['trust-new']);
   const projectFilter = stringFlag(args.flags['project']);
   const envFilter = stringFlag(args.flags['env']);
 
@@ -118,13 +120,25 @@ export async function rekey(args: Args): Promise<void> {
     const res = await client.get<RecipientsResponse>(
       `/api/v1/workspaces/${workspace}/recipients?project=${encodeURIComponent(projectSlug)}`,
     );
-    const recipients = res.recipients.map((r) => r.recipient);
-    if (recipients.length === 0) {
+    if (res.recipients.length === 0) {
       throw new CliError(
         `No recipients to encrypt to for ${workspace}/${projectSlug}.`,
         { hint: 'Have at least one member run `envstore identity init` first.' },
       );
     }
+    // Rekey re-encrypts everything to the server-declared set, so the same
+    // injection threat as push applies here. We skip the check in dry-run
+    // because that mode is supposed to be read-only (no trust-cache writes,
+    // no prompts) — the user is exploring; the real `envstore rekey` will
+    // surface any diff at commit time.
+    if (!dryRun) {
+      await applyTrustDecision(
+        { apiUrl, workspace, project: projectSlug },
+        res.recipients,
+        { trustNew },
+      );
+    }
+    const recipients = res.recipients.map((r) => r.recipient);
     const hash = await recipientsHashHex(recipients);
     const out: ResolvedRecipients = { recipients, hash };
     cache.set(projectSlug, out);

@@ -9,11 +9,16 @@ $1.99/month per workspace. Unlimited team members.
 
 ## Why
 
-After Vercel's secrets breach forced "sensitive" marking on every environment
-variable in their fleet, it became obvious: trusting any third party with
-plaintext access to your secrets is a category error. envstore exists so the
-server never sees plaintext, never holds a password, and is useless to an
-attacker who steals every byte of it.
+Vercel's [April 2026 security incident](https://vercel.com/kb/bulletin/vercel-april-2026-security-incident)
+prompted them to ask users to mark secret env vars as "sensitive" — and once
+marked, those vars can no longer be pulled via CLI or API. Following that
+guidance across many working environments broke my `vercel pull` workflow,
+and the response itself eroded my trust in the process.
+
+The obvious alternative — services that decrypt env files in your browser —
+doesn't help: it's one breach away from the same problem. envstore is the
+reaction. The server holds ciphertext only, decryption happens on your
+machine, and a full server compromise yields no plaintext.
 
 ## What you get
 

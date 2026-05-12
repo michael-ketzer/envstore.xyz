@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@envstore/web", "exec", "next", "dev", "--port", "3100"],
+      "port": 3100
+    }
+  ]
+}

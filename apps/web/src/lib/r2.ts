@@ -92,7 +92,7 @@ const CIPHERTEXT_CONTENT_TYPE = 'application/octet-stream';
 
 export async function presignPut(
   key: string,
-  opts: { sizeBytes: number; sha256Hex?: string; expiresIn?: number },
+  opts: { sizeBytes: number; sha256Hex: string; expiresIn?: number },
 ): Promise<PresignedPut> {
   const { bucket } = requireR2();
   if (opts.sizeBytes < 1 || opts.sizeBytes > LIMITS.maxCiphertextBytes) {
@@ -100,14 +100,29 @@ export async function presignPut(
       `presigned PUT must declare a size between 1 and ${LIMITS.maxCiphertextBytes} bytes`,
     );
   }
-  // Sign with ContentType + ContentLength so R2 enforces them. The client must
-  // echo these headers; presigned signatures bind them. Note: we don't pin
-  // sha256 here — R2 does not enforce x-amz-checksum-* headers via presign.
+  if (!/^[0-9a-f]{64}$/.test(opts.sha256Hex)) {
+    throw new Error('presigned PUT requires a 64-char lowercase hex sha256');
+  }
+
+  // Bind the upload to the SHA-256 the CLI announced at init.
+  //
+  // R2 honors S3's `x-amz-checksum-sha256` flow: when ChecksumSHA256 is
+  // set on the signed PutObjectCommand, the client MUST send a matching
+  // `x-amz-checksum-sha256` header AND R2 recomputes the digest of the
+  // received body and rejects the upload if it doesn't match. That closes
+  // the previous gap where the CLI could announce one sha256 to the
+  // server, store it on the version row, but upload arbitrary bytes of
+  // the same length to R2 — the mismatch only surfaced when a teammate
+  // later tried to decrypt.
+  //
+  // ContentLength is also signed, so the size is enforced too.
+  const sha256Base64 = Buffer.from(opts.sha256Hex, 'hex').toString('base64');
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
     ContentType: CIPHERTEXT_CONTENT_TYPE,
     ContentLength: opts.sizeBytes,
+    ChecksumSHA256: sha256Base64,
   });
   const url = await getSignedUrl(client(), command, {
     expiresIn: opts.expiresIn ?? DEFAULT_PUT_EXPIRY,
@@ -117,6 +132,7 @@ export async function presignPut(
     requiredHeaders: {
       'content-type': CIPHERTEXT_CONTENT_TYPE,
       'content-length': String(opts.sizeBytes),
+      'x-amz-checksum-sha256': sha256Base64,
     },
     expiresIn: opts.expiresIn ?? DEFAULT_PUT_EXPIRY,
   };

@@ -23,14 +23,19 @@ declare module 'next-auth' {
 
 const providers: Provider[] = [];
 
+// IMPORTANT: we deliberately do NOT set `allowDangerousEmailAccountLinking`
+// here. With that flag on, an OAuth provider returning a matching email
+// would be silently linked into an existing account — if an attacker can
+// get an account on the provider with a victim's email (verified by some
+// providers, not others), they end up signed in as the victim. Auth.js
+// instead surfaces `OAuthAccountNotLinked` and forces the user to sign in
+// with the original method, then add the second provider explicitly from
+// their settings page. That's the safe default and it's what we want.
 if (features.githubAuth) {
   providers.push(
     GitHub({
       clientId: env.AUTH_GITHUB_ID!,
       clientSecret: env.AUTH_GITHUB_SECRET!,
-      // Allow the same email to link across providers — the user might sign in
-      // with GitHub one day and Google the next.
-      allowDangerousEmailAccountLinking: true,
     }),
   );
 }
@@ -40,7 +45,6 @@ if (features.googleAuth) {
     Google({
       clientId: env.AUTH_GOOGLE_ID!,
       clientSecret: env.AUTH_GOOGLE_SECRET!,
-      allowDangerousEmailAccountLinking: true,
     }),
   );
 }

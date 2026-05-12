@@ -4,9 +4,18 @@ import { apiError, pickIp } from '@/lib/api-auth';
 import { clientEnv } from '@/env.client';
 import { startDeviceAuthorization } from '@/lib/device-auth';
 import { rateLimitByIp, tooManyRequests } from '@/lib/rate-limit';
+import { noControlChars } from '@envstore/shared';
 
 const startSchema = z.object({
-  clientName: z.string().min(1).max(80).optional(),
+  // Rendered on /cli/<userCode> as the "Device:" line. Refuse control chars
+  // so an attacker can't paint a fake row over the trusted IP/device-name
+  // panel that the approving user is supposed to verify.
+  clientName: z
+    .string()
+    .min(1)
+    .max(80)
+    .refine(noControlChars, 'clientName must not contain control characters')
+    .optional(),
 });
 
 export async function POST(req: Request) {

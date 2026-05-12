@@ -6,6 +6,8 @@
 
 import { describe, expect, mock, test } from 'bun:test';
 
+import { makeEnvMock } from '@/test/env-mock';
+
 mock.module('server-only', () => ({}));
 
 const fakeHeaders = new Map<string, string>();
@@ -14,6 +16,14 @@ mock.module('next/headers', () => ({
     get: (k: string) => fakeHeaders.get(k.toLowerCase()) ?? null,
   }),
 }));
+
+// Default rate-limit env: 1 trusted proxy hop, no override header. Tests that
+// need different values override per-block via fakeEnv mutation.
+const fakeEnv: Record<string, unknown> = {
+  TRUSTED_PROXY_HOPS: 1,
+  RATE_LIMIT_IP_HEADER: undefined,
+};
+mock.module('@/env', () => makeEnvMock({ env: fakeEnv }));
 
 const { rateLimit, rateLimitByIp, getRequestIp, tooManyRequests } = await import(
   './rate-limit'
@@ -85,10 +95,22 @@ describe('tooManyRequests', () => {
 });
 
 describe('getRequestIp', () => {
-  test('prefers x-forwarded-for first hop', async () => {
+  test('reads x-forwarded-for from the RIGHT — closest to the trust boundary', async () => {
+    // Default TRUSTED_PROXY_HOPS=1. With a chain
+    //   `<client>, <upstream-proxy>, <our-proxy>`
+    // we want our proxy's view of the upstream — that's the last entry,
+    // which is what the trust boundary directly observed. Reading the
+    // first entry was the legacy behavior and let an untrusted appender
+    // spoof the rate-limit key.
     fakeHeaders.clear();
     fakeHeaders.set('x-forwarded-for', '203.0.113.10, 198.51.100.1, 10.0.0.1');
-    expect(await getRequestIp()).toBe('203.0.113.10');
+    expect(await getRequestIp()).toBe('10.0.0.1');
+  });
+
+  test('single-IP x-forwarded-for returns that IP', async () => {
+    fakeHeaders.clear();
+    fakeHeaders.set('x-forwarded-for', '203.0.113.5');
+    expect(await getRequestIp()).toBe('203.0.113.5');
   });
 
   test('falls back to x-real-ip when x-forwarded-for is absent', async () => {
@@ -100,6 +122,44 @@ describe('getRequestIp', () => {
   test('returns null when neither header present', async () => {
     fakeHeaders.clear();
     expect(await getRequestIp()).toBeNull();
+  });
+
+  test('respects TRUSTED_PROXY_HOPS=2 (two trusted proxies in front)', async () => {
+    fakeHeaders.clear();
+    fakeHeaders.set('x-forwarded-for', '203.0.113.10, 198.51.100.1, 10.0.0.1');
+    fakeEnv.TRUSTED_PROXY_HOPS = 2;
+    try {
+      // With 2 hops, the "real" client IP is the 2nd-from-right: 198.51.100.1.
+      expect(await getRequestIp()).toBe('198.51.100.1');
+    } finally {
+      fakeEnv.TRUSTED_PROXY_HOPS = 1;
+    }
+  });
+
+  test('RATE_LIMIT_IP_HEADER overrides x-forwarded-for parsing entirely', async () => {
+    fakeHeaders.clear();
+    fakeHeaders.set('x-forwarded-for', 'attacker, 10.0.0.1');
+    fakeHeaders.set('cf-connecting-ip', '198.51.100.99');
+    fakeEnv.RATE_LIMIT_IP_HEADER = 'cf-connecting-ip';
+    try {
+      expect(await getRequestIp()).toBe('198.51.100.99');
+    } finally {
+      fakeEnv.RATE_LIMIT_IP_HEADER = undefined;
+    }
+  });
+
+  test('untrusted appender to x-forwarded-for cannot spoof the IP (regression for H-3)', async () => {
+    // With TRUSTED_PROXY_HOPS=1 (one proxy between us and the public
+    // internet), the only trustworthy IP is the rightmost — written by
+    // that proxy. The leftmost entry is whatever the client claimed. An
+    // attacker rotating the leftmost IP must not bypass per-IP limits.
+    fakeHeaders.clear();
+    fakeHeaders.set('x-forwarded-for', '1.1.1.1, 10.0.0.1');
+    const first = await getRequestIp();
+    fakeHeaders.set('x-forwarded-for', '2.2.2.2, 10.0.0.1');
+    const second = await getRequestIp();
+    expect(first).toBe('10.0.0.1');
+    expect(second).toBe('10.0.0.1');
   });
 });
 

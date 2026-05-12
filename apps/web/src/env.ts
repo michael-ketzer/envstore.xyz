@@ -82,6 +82,26 @@ const serverEnvSchema = z.object({
   // Unset → cron route returns 503 to avoid a misconfigured deployment
   // running un-authed deletes.
   CRON_SECRET: optionalString,
+
+  // Number of trusted proxy hops between the public internet and this
+  // process. Rate limiters key on the client IP, which we extract from
+  // x-forwarded-for; an untrusted appender to that header would otherwise
+  // bypass per-IP limits. With N hops, we take the (N+1)-th entry from
+  // the right of x-forwarded-for, ignoring anything to the left of it
+  // (those are attacker-controlled).
+  //
+  // Default 1 = single trusted proxy directly in front of this server
+  // (Vercel's edge, a typical nginx, Cloudflare). Set to 2 if you have
+  // e.g. Cloudflare in front of Vercel. Operators MUST set this correctly
+  // for their topology — getting it wrong fails open.
+  TRUSTED_PROXY_HOPS: z
+    .preprocess(blankToUndefined, z.coerce.number().int().min(0).max(10).optional())
+    .transform((v) => v ?? 1),
+
+  // Alternative: name a single header to trust as the authoritative client
+  // IP (Cloudflare's `cf-connecting-ip`, Vercel's `x-real-ip`, etc.). When
+  // set, this wins over TRUSTED_PROXY_HOPS parsing of x-forwarded-for.
+  RATE_LIMIT_IP_HEADER: optionalString,
 });
 
 const parsed = serverEnvSchema.safeParse(process.env);

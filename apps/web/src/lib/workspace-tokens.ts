@@ -40,6 +40,7 @@ function generateBearer(): string {
 // is a sensible default that prompts rotation hygiene.
 const DEFAULT_EXPIRES_IN_DAYS = 90;
 const MAX_EXPIRES_IN_DAYS = 365;
+const MIN_EXPIRES_IN_DAYS = 1;
 
 export type CreateWorkspaceTokenResult =
   | {
@@ -102,8 +103,15 @@ export async function createWorkspaceToken(args: {
     scopedProjects = resolved.map((p) => ({ slug: p.slug, name: p.name }));
   }
 
-  const days = Math.min(input.expiresInDays ?? DEFAULT_EXPIRES_IN_DAYS, MAX_EXPIRES_IN_DAYS);
-  const expiresAt = days > 0 ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
+  // Every token gets a real expiry. `expiresInDays: 0` (or "never") used to
+  // mean "no expiry"; that's gone — the schema and this clamp now enforce
+  // a finite window. Reduces blast radius if a token leaks years from now.
+  const requestedDays = input.expiresInDays ?? DEFAULT_EXPIRES_IN_DAYS;
+  const days = Math.max(
+    MIN_EXPIRES_IN_DAYS,
+    Math.min(requestedDays, MAX_EXPIRES_IN_DAYS),
+  );
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
   // Loop a couple times in the cosmically unlikely event of a token hash
   // collision; sha256 of 256 random bits has no realistic clash.

@@ -26,7 +26,7 @@
 //   5. Write to disk (mode 0600), refusing to overwrite without --force.
 
 import { mkdir, stat } from 'node:fs/promises';
-import { basename, dirname, relative, resolve } from 'node:path';
+import { basename, dirname, relative, resolve, sep } from 'node:path';
 
 import { decryptToString } from '@envstore/crypto/age';
 import { sha256Hex } from '@envstore/crypto/hash';
@@ -60,6 +60,30 @@ type PullResponse = {
 };
 
 const DEFAULT_ENV_SLUG = 'development';
+
+// Defense-in-depth path-traversal guard. The schema rejects malicious
+// `files[].path` entries up-front, but we re-check the resolved absolute
+// path here so a hostile envstore.json (or `--out`) can never write outside
+// the directory holding envstore.json.
+//
+// `bound` is the absolute path of the config directory (multi mode) or
+// process.cwd() (flat mode). `outPath` is the resolved absolute write
+// target. We refuse the write unless outPath === bound or outPath is
+// strictly inside bound. The check is purely syntactic (no realpath/symlink
+// chase) — writeSecretFile's O_EXCL+unlink pattern handles the symlink
+// race separately.
+function assertWriteWithinBound(outPath: string, bound: string): void {
+  const normalizedBound = bound.endsWith(sep) ? bound : bound + sep;
+  if (outPath === bound || outPath.startsWith(normalizedBound)) return;
+  throw new CliError(
+    `Refusing to write outside the project: ${outPath}`,
+    {
+      hint:
+        'envstore pull only writes inside the directory containing envstore.json. ' +
+        'Path traversal (`..`, absolute paths, `~`) is not allowed.',
+    },
+  );
+}
 
 export async function pull(args: Args): Promise<void> {
   const cfg = await findProjectConfig();
@@ -127,6 +151,7 @@ export async function pull(args: Args): Promise<void> {
       const outPath = outOverride
         ? resolve(process.cwd(), outOverride)
         : resolve(configDir, file.path);
+      assertWriteWithinBound(outPath, configDir);
       await pullOneFile({
         client,
         workspace,
@@ -158,6 +183,10 @@ export async function pull(args: Args): Promise<void> {
     process.cwd(),
     outOverride ?? defaultFilenameForEnvironment(envSlug),
   );
+  // Flat mode: bound is the directory holding envstore.json. --out paths
+  // outside that tree (e.g. `--out ../../../etc/passwd-bogus`, or an
+  // absolute path) are refused.
+  assertWriteWithinBound(outPath, dirname(cfg.path));
   await pullOneFile({
     client,
     workspace,

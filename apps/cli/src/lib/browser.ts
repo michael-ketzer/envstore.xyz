@@ -4,14 +4,21 @@
 import { spawn } from 'node:child_process';
 
 export function openUrl(url: string): void {
+  // The `apiUrl` field in envstore.json is operator-configurable; the
+  // device-start response (which seeds the URL we open here) comes from
+  // that endpoint. On Windows, going through `cmd /c start` exposes the
+  // URL string to cmd.exe's argument parser, which historically had
+  // quoting footguns (CVE-2024-27980-class). Use rundll32's
+  // FileProtocolHandler instead — it hands the URL directly to the
+  // registered protocol handler without a shell re-parse.
   let cmd: string;
   let args: string[];
   if (process.platform === 'darwin') {
     cmd = 'open';
     args = [url];
   } else if (process.platform === 'win32') {
-    cmd = 'cmd';
-    args = ['/c', 'start', '""', url];
+    cmd = 'rundll32';
+    args = ['url.dll,FileProtocolHandler', url];
   } else {
     cmd = 'xdg-open';
     args = [url];

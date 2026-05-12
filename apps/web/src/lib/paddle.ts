@@ -69,7 +69,7 @@ export async function ensurePaddleCustomer(user: {
     customerId = customer.id;
   } catch (err) {
     if (err instanceof ApiError && err.code === 'customer_already_exists') {
-      customerId = await findPaddleCustomerIdByEmail(paddle, user.email);
+      customerId = await findPaddleCustomerIdByEmail(paddle, user.email, user.id);
     } else {
       throw err;
     }
@@ -83,17 +83,38 @@ export async function ensurePaddleCustomer(user: {
   return customerId;
 }
 
-// Looks up a Paddle Customer by email. Used to recover from the
-// `customer_already_exists` conflict in `ensurePaddleCustomer`.
+// Looks up a Paddle Customer by email AFTER a `customer_already_exists`
+// conflict. We don't just take the first email match — that would let one
+// envstore user inherit a Paddle customer (and its saved card / subscription
+// history) that belongs to a different envstore account. We require the
+// Paddle customer's `customData.envstoreUserId` to match the current user.
+//
+// If a row with the right email exists but its customData doesn't tag this
+// user, fail loudly instead of adopting — that's an operator-fixable state
+// (the original Paddle customer probably needs to be archived / merged in
+// the Paddle dashboard).
 async function findPaddleCustomerIdByEmail(
   paddle: Paddle,
   email: string,
+  userId: string,
 ): Promise<string> {
   const collection = paddle.customers.list({ email: [email] });
+  let sawEmailMatch = false;
   for await (const customer of collection) {
-    if (customer.email.toLowerCase() === email.toLowerCase()) {
-      return customer.id;
-    }
+    if (customer.email.toLowerCase() !== email.toLowerCase()) continue;
+    sawEmailMatch = true;
+    const customData = customer.customData as Record<string, unknown> | null;
+    const taggedUserId =
+      typeof customData?.['envstoreUserId'] === 'string'
+        ? (customData['envstoreUserId'] as string)
+        : null;
+    if (taggedUserId === userId) return customer.id;
+  }
+  if (sawEmailMatch) {
+    throw new Error(
+      `Paddle customer for ${email} exists but is tagged to a different envstore user. ` +
+        `Open the Paddle dashboard, archive or re-tag that customer, then retry.`,
+    );
   }
   // Paddle just told us there's a conflict — if list returns nothing the
   // customer was archived. Surface a clear error instead of silently retrying.

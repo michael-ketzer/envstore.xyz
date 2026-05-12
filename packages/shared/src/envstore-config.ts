@@ -27,9 +27,45 @@ export const ENVSTORE_CONFIG_VERSION = 1;
 export const ENVSTORE_CONFIG_FILENAME = 'envstore.json';
 
 // Per-file entry inside the `files` array.
-// `path` is relative to the directory holding this envstore.json.
+// `path` is RELATIVE to the directory holding this envstore.json and must
+// resolve inside that directory tree. We reject:
+//   - absolute paths (`/etc/passwd`, `C:\Windows\…`) — would write outside the repo
+//   - `~`-prefixed paths — shell-style home expansion
+//   - control characters / null bytes — invisible-modification trick
+//   - any `..` segment — even if it happens to resolve back inside, configs
+//     should never need them; the runtime resolve in pull.ts also rejects
+//     any final path outside the config's directory as defense-in-depth.
+//
+// Rationale: envstore.json is committable to git. Without this validation a
+// malicious PR could set `files[].path` to `~/.ssh/authorized_keys`,
+// `~/.zshrc`, `~/Library/LaunchAgents/x.plist`, etc., and the next teammate
+// to run `envstore pull` would have those files atomically overwritten with
+// the attacker-supplied plaintext (writeSecretFile unlinks-then-creates
+// O_EXCL, so even existing files are clobbered).
+// Returns null if the path is acceptable, or a human-readable reason if not.
+export function checkSafeRelativePath(input: string): string | null {
+  if (input.length === 0) return 'path must not be empty';
+  if (/[\x00-\x1f\x7f]/.test(input)) return 'path must not contain control characters';
+  if (input.startsWith('/')) return 'path must be relative (not absolute)';
+  if (/^[a-zA-Z]:[\\/]/.test(input)) return 'path must be relative (not absolute)';
+  if (input.startsWith('\\\\')) return 'UNC paths are not allowed';
+  if (input.startsWith('~')) return 'paths must not start with ~';
+  // Reject any `..` segment, regardless of where it ends up resolving.
+  const segments = input.split(/[\\/]+/);
+  if (segments.some((s) => s === '..')) return 'path must not contain `..` segments';
+  return null;
+}
+
 export const envstoreFileEntrySchema = z.object({
-  path: z.string().min(1),
+  path: z
+    .string()
+    .min(1)
+    .superRefine((p, ctx) => {
+      const reason = checkSafeRelativePath(p);
+      if (reason) {
+        ctx.addIssue({ code: 'custom', message: reason });
+      }
+    }),
   project: projectSlugSchema,
   environment: environmentSlugSchema.optional(),
 });

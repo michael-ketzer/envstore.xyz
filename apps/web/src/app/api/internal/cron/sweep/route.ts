@@ -10,11 +10,34 @@
 // CRON_SECRET is unset we hard-refuse to run — a misconfigured deployment
 // must not delete anything.
 
+import { timingSafeEqual } from 'node:crypto';
+
 import { apiError } from '@/lib/api-auth';
 import { env } from '@/env';
 import { runRetentionSweep } from '@/lib/retention-sweep';
 
 export const dynamic = 'force-dynamic';
+
+// Constant-time compare for the Authorization header. Plain `!==`
+// short-circuits at the first mismatched byte; that's a network-noisy
+// signal in practice but trivial to eliminate.
+function safeBearerEq(received: string | null, secret: string): boolean {
+  const expected = `Bearer ${secret}`;
+  if (received === null) return false;
+  // Pad received to the expected length so timingSafeEqual doesn't throw
+  // on a length mismatch (it requires equal-length buffers). The pad is
+  // overwritten by a fresh comparison that we discard — the actual answer
+  // comes from the equal-length compare AND the original length check.
+  const a = Buffer.from(received);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) {
+    // Still do a constant-time compare on a same-length pad so the path
+    // taken doesn't leak the length-equality result.
+    timingSafeEqual(b, b);
+    return false;
+  }
+  return timingSafeEqual(a, b);
+}
 
 export async function GET(req: Request) {
   if (!env.CRON_SECRET) {
@@ -25,7 +48,7 @@ export async function GET(req: Request) {
   }
 
   const bearer = req.headers.get('authorization');
-  if (bearer !== `Bearer ${env.CRON_SECRET}`) {
+  if (!safeBearerEq(bearer, env.CRON_SECRET)) {
     return apiError('Unauthorized cron invocation.', 401);
   }
 

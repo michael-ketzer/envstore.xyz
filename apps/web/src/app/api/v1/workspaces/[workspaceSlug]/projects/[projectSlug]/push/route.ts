@@ -45,7 +45,17 @@ const pushInitSchema = z.object({
     .max(LIMITS.maxCiphertextBytes),
   ciphertextSha256: z.string().regex(/^[0-9a-f]{64}$/, 'sha256 must be lowercase hex(64)'),
   recipientsHash: z.string().regex(/^[0-9a-f]{64}$/, 'recipientsHash must be lowercase hex(64)'),
-  comment: z.string().max(LIMITS.commentMax).optional(),
+  // Reject NUL + DEL + most C0 controls (newlines allowed since comments
+  // can be multi-line); see safe-string.ts for the same rationale applied
+  // to display fields.
+  comment: z
+    .string()
+    .max(LIMITS.commentMax)
+    .refine(
+      (s) => !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(s),
+      'comment must not contain control characters',
+    )
+    .optional(),
 });
 
 export async function POST(req: Request, ctx: Ctx) {
@@ -156,7 +166,13 @@ export async function POST(req: Request, ctx: Ctx) {
 
   let presigned;
   try {
-    presigned = await presignPut(r2Key, { sizeBytes: parsed.data.ciphertextSize });
+    // Bind the presigned PUT to the announced sha256 — R2 verifies the
+    // body matches on upload, closing the trust gap the previous
+    // UNSIGNED-PAYLOAD flow had. See r2.ts:presignPut for details.
+    presigned = await presignPut(r2Key, {
+      sizeBytes: parsed.data.ciphertextSize,
+      sha256Hex: parsed.data.ciphertextSha256,
+    });
   } catch (err) {
     if (err instanceof R2NotConfiguredError) return apiError(err.message, 503);
     throw err;

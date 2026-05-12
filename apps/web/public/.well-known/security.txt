@@ -1,0 +1,5 @@
+Contact: mailto:security@envstore.xyz
+Expires: 2027-05-12T00:00:00.000Z
+Preferred-Languages: en, de
+Canonical: https://www.envstore.xyz/.well-known/security.txt
+Policy: https://www.envstore.xyz/security

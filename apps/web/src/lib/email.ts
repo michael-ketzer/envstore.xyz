@@ -14,7 +14,11 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
   await resend.emails.send({
     from: env.RESEND_FROM,
     to,
-    subject: `envstore login code: ${code}`,
+    // Code lives in the body only. Subject lines leak into mail-server logs,
+    // OS-level notification previews, and lock-screen banners — putting the
+    // OTP there would let anyone in line-of-sight or with a paired device
+    // read it without unlocking.
+    subject: 'Your envstore login code',
     text: [
       `Your envstore login code is: ${code}`,
       ``,

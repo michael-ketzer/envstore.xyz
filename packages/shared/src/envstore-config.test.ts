@@ -85,6 +85,71 @@ describe('envstoreConfigSchema', () => {
   });
 });
 
+describe('envstoreFileEntrySchema path safety', () => {
+  // Regression for the path-traversal write-anywhere primitive: a committed
+  // envstore.json that points `files[].path` at `/etc/passwd-bogus`,
+  // `~/.ssh/authorized_keys`, or `../../../tmp/x` used to let `envstore pull`
+  // overwrite arbitrary files on the puller's machine. Schema rejects them
+  // all now; pull.ts also re-checks containment at runtime as defense in
+  // depth.
+  test('rejects absolute Unix paths', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: '/etc/passwd-bogus', project: 'pj' }],
+      }),
+    ).toThrow(/absolute/);
+  });
+  test('rejects Windows drive-letter paths', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: 'C:\\Windows\\foo', project: 'pj' }],
+      }),
+    ).toThrow(/absolute/);
+  });
+  test('rejects UNC paths', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: '\\\\server\\share\\x', project: 'pj' }],
+      }),
+    ).toThrow(/UNC/);
+  });
+  test('rejects ~-prefixed paths', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: '~/.ssh/authorized_keys', project: 'pj' }],
+      }),
+    ).toThrow(/~/);
+  });
+  test('rejects `..` segments', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: '../../poc/PWNED', project: 'pj' }],
+      }),
+    ).toThrow(/\.\./);
+  });
+  test('rejects control characters', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: 'foo\x00bar', project: 'pj' }],
+      }),
+    ).toThrow(/control/);
+  });
+  test('accepts ordinary relative paths', () => {
+    expect(() =>
+      envstoreConfigSchema.parse({
+        workspace: 'ws',
+        files: [{ path: 'apps/web/.env.local', project: 'web' }],
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe('normalizeToFiles', () => {
   test('flat config synthesizes a single entry with .env path', () => {
     const cfg = envstoreConfigSchema.parse({ workspace: 'ws', project: 'pj' });

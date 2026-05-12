@@ -81,7 +81,16 @@ export const PERSONAL_WORKSPACE_URL_SLUG = 'me';
 
 // Reserved slugs that can never be used for workspaces (collide with routes or
 // have special semantics — `me` is the personal-workspace shortcut above).
+// Three buckets:
+//   1. App-route collisions today (/api, /dashboard, /login, …) — these would
+//      404 or behave weirdly if a workspace took the same slug.
+//   2. JS-keyword-shaped strings that confuse UIs and audit-log readers
+//      (`null`, `undefined`, `true`, `false`, `nan`).
+//   3. Operational namespaces we may want to add later (`status`, `mail`,
+//      `static`, …) — cheap to reserve up-front, expensive to evict an
+//      already-occupied slug.
 export const RESERVED_WORKSPACE_SLUGS = new Set([
+  // App-route collisions
   'api',
   'app',
   'auth',
@@ -90,6 +99,7 @@ export const RESERVED_WORKSPACE_SLUGS = new Set([
   'dashboard',
   'docs',
   'help',
+  'install',
   'invite',
   'login',
   'logout',
@@ -105,10 +115,41 @@ export const RESERVED_WORKSPACE_SLUGS = new Set([
   'terms',
   'privacy',
   'admin',
+  'administrator',
   'me',
   'public',
   'static',
   'www',
+  'security',
+  'schema',
+  'verify',
+  'refund',
+  'imprint',
+  'paddle',
+  'resend',
+  'internal',
+  'well-known',
+  // JS-keyword-shaped — leak from naive front-end stringification of nullish
+  // values, also confuse audit-log readers ("workspace null was deleted").
+  'null',
+  'undefined',
+  'nan',
+  'true',
+  'false',
+  // Operational
+  'webhook',
+  'webhooks',
+  'health',
+  'healthz',
+  'metrics',
+  'oauth',
+  'sso',
+  'logs',
+  'log',
+  'cron',
+  'robots',
+  'sitemap',
+  'favicon',
 ]);
 
 // ---------- Workspace roles ----------

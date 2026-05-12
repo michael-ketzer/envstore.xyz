@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { LIMITS, SLUG_REGEX } from '../constants';
+import { noControlChars, safeDisplayString } from '../safe-string';
 
 // Bearer prefix lets leaked tokens be greppable by GitGuardian / TruffleHog
 // patterns and visually distinguishes service tokens from user CLI tokens.
@@ -11,7 +12,11 @@ export const WORKSPACE_TOKEN_LENGTH = WORKSPACE_TOKEN_PREFIX.length + 52;
 // Public age recipient. Real validation happens server-side via the same
 // helpers the user-identity flow uses; here we just bound the size so
 // pathological inputs don't reach the DB.
-const recipientSchema = z.string().min(20).max(500);
+const recipientSchema = z
+  .string()
+  .min(20)
+  .max(500)
+  .refine(noControlChars, 'recipient must not contain control characters');
 
 const projectSlugInToken = z
   .string()
@@ -20,12 +25,16 @@ const projectSlugInToken = z
   .regex(SLUG_REGEX, 'Invalid project slug');
 
 export const workspaceTokenCreateSchema = z.object({
-  name: z.string().min(1).max(LIMITS.nameMax).trim(),
+  // Names appear in audit logs and the dashboard token list — refuse
+  // terminal-escape and NUL injection just like other display strings.
+  name: safeDisplayString(1, LIMITS.nameMax),
   // Public half of an age keypair the CLI generated locally. Server never
   // sees the private key — preserves zero-knowledge.
   recipient: recipientSchema,
-  // Optional expiry in days from now. Server caps at a max and defaults
-  // when omitted; see lib/workspace-tokens.ts.
+  // Required expiry in days from now. Tokens with no expiry are a known
+  // source of ex-employee retention risk, so we no longer allow them. The
+  // upper bound is 365 days; default is 90 (applied server-side when the
+  // CLI omits the field, which it doesn't from the dashboard form).
   expiresInDays: z.number().int().min(1).max(365).optional(),
   // Optional project-scope allowlist (slugs). Omitted or empty array =
   // token authorizes every project in the workspace. Populated = strict

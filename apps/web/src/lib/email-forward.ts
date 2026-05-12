@@ -34,6 +34,17 @@ export class EmailForwardNotConfiguredError extends Error {
   }
 }
 
+// Loose email-address sanity check — refuses obvious header-injection
+// attempts (CR/LF) and anything that doesn't look like a single address.
+// Resend's API does its own validation, but we don't want to pass through
+// untrusted-but-syntactically-valid input that nonetheless looks weird.
+function looksLikeEmailAddress(raw: string): boolean {
+  if (raw.length === 0 || raw.length > 320) return false;
+  if (/[\r\n\x00]/.test(raw)) return false;
+  // Bare `local@host` form, or `Display Name <local@host>`.
+  return /^[^<>]*<[^<>@\s]+@[^<>@\s]+>\s*$|^[^<>@\s]+@[^<>@\s]+$/.test(raw);
+}
+
 export async function forwardInboundEmail(data: InboundEmail): Promise<void> {
   const apiKey = env.RESEND_API_KEY;
   const from = env.RESEND_FROM;
@@ -42,13 +53,18 @@ export async function forwardInboundEmail(data: InboundEmail): Promise<void> {
     throw new EmailForwardNotConfiguredError();
   }
 
-  const originalFrom = pickAddress(data.from) ?? 'unknown sender';
+  const rawFrom = pickAddress(data.from);
+  const originalFrom = rawFrom ?? 'unknown sender';
   const originalTo = Array.isArray(data.to)
     ? data.to.join(', ')
     : (data.to ?? 'unknown recipient');
   const subject = (data.subject ?? '').trim() || '(no subject)';
   const text = (data.text ?? '').toString();
-  const html = data.html ? data.html.toString() : null;
+
+  // Only pass reply-to if it parses as a single email address. Untrusted
+  // input here was previously fed straight into Resend's API.
+  const replyTo =
+    rawFrom && looksLikeEmailAddress(rawFrom) ? rawFrom : undefined;
 
   const meta = [
     `── Forwarded from envstore inbound ──`,
@@ -58,25 +74,19 @@ export async function forwardInboundEmail(data: InboundEmail): Promise<void> {
     '',
   ].join('\n');
 
+  // Deliberately drop the HTML body. Attacker-controlled HTML in the
+  // forward turned the admin inbox into a phishing surface — branded
+  // links, tracking pixels, and quirks that some mail clients still
+  // render. Plaintext-only forwarding keeps fidelity for the admin while
+  // removing every active-content vector. If the original HTML is needed
+  // for an investigation, it's still available in Resend's dashboard.
   const resend = new Resend(apiKey);
   await resend.emails.send({
     from,
     to,
-    // Reply in the user's mail client goes to the original sender, not us.
-    replyTo: pickAddress(data.from) ?? undefined,
+    replyTo,
     subject: `[fwd] ${subject}`,
     text: meta + text,
-    html: html
-      ? [
-          `<div style="border-left:3px solid #ccc;padding:0 0 0 12px;color:#666;font-size:12px;margin-bottom:16px;font-family:ui-monospace,SF Mono,monospace;">`,
-          `Forwarded from envstore inbound<br>`,
-          `From: ${escapeHtml(originalFrom)}<br>`,
-          `To: ${escapeHtml(originalTo)}<br>`,
-          `Subject: ${escapeHtml(subject)}`,
-          `</div>`,
-          html,
-        ].join('')
-      : undefined,
     attachments: normalizeAttachments(data.attachments ?? null),
   });
 }
@@ -107,18 +117,4 @@ function normalizeAttachments(
     }
   }
   return out.length ? out : undefined;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === '&'
-      ? '&amp;'
-      : c === '<'
-        ? '&lt;'
-        : c === '>'
-          ? '&gt;'
-          : c === '"'
-            ? '&quot;'
-            : '&#39;',
-  );
 }

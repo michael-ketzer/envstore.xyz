@@ -12,11 +12,12 @@
 // docs for the escalation invariant.
 
 import 'server-only';
-import { headers } from 'next/headers';
 
 import { prisma, type CliToken, type User, type WorkspaceToken } from '@envstore/db';
 import { sha256Hex } from '@envstore/crypto/hash';
 import { WORKSPACE_TOKEN_PREFIX } from '@envstore/shared';
+
+import { getRequestIp } from './rate-limit';
 
 export type AuthedUser = {
   kind: 'user';
@@ -139,17 +140,11 @@ export function tokenAllowsProject(auth: Authed, projectId: string): boolean {
   return scope.includes(projectId);
 }
 
-export function requestIp(): string | null {
-  // Synchronous-ish helper for use inside handlers that have already awaited headers().
-  // Most callers go through `pickIp` below instead.
-  return null;
-}
-
 export async function pickIp(): Promise<string | null> {
-  const h = await headers();
-  return (
-    h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? h.get('x-real-ip') ?? null
-  );
+  // Delegate to the rate-limit module so we use the same trusted-hop /
+  // RATE_LIMIT_IP_HEADER logic across the codebase. The naive
+  // "first-of-x-forwarded-for" pattern was unsafe — see rate-limit.ts.
+  return getRequestIp();
 }
 
 export function unauthorized(message = 'Not authenticated.'): Response {

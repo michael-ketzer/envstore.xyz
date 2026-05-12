@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
-import { apiError, pickIp } from '@/lib/api-auth';
+import { apiError } from '@/lib/api-auth';
 import { clientEnv } from '@/env.client';
 import { startDeviceAuthorization } from '@/lib/device-auth';
-import { rateLimitByIp, tooManyRequests } from '@/lib/rate-limit';
+import {
+  getRequestIp,
+  rateLimitByIp,
+  tooManyRequests,
+} from '@/lib/rate-limit';
 import { noControlChars } from '@envstore/shared';
 
 const startSchema = z.object({
@@ -34,7 +38,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return apiError(parsed.error.issues[0]?.message ?? 'Invalid body.', 400);
   }
-  const ip = await pickIp();
+  const ip = await getRequestIp();
   const started = await startDeviceAuthorization({
     clientName: parsed.data.clientName ?? 'envstore-cli',
     ipAddress: ip,

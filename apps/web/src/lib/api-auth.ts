@@ -17,8 +17,6 @@ import { prisma, type CliToken, type User, type WorkspaceToken } from '@envstore
 import { sha256Hex } from '@envstore/crypto/hash';
 import { WORKSPACE_TOKEN_PREFIX } from '@envstore/shared';
 
-import { getRequestIp } from './rate-limit';
-
 export type AuthedUser = {
   kind: 'user';
   user: User;
@@ -138,13 +136,6 @@ export function tokenAllowsProject(auth: Authed, projectId: string): boolean {
   const scope = auth.token.scopedProjectIds;
   if (scope.length === 0) return true; // empty = workspace-wide
   return scope.includes(projectId);
-}
-
-export async function pickIp(): Promise<string | null> {
-  // Delegate to the rate-limit module so we use the same trusted-hop /
-  // RATE_LIMIT_IP_HEADER logic across the codebase. The naive
-  // "first-of-x-forwarded-for" pattern was unsafe — see rate-limit.ts.
-  return getRequestIp();
 }
 
 export function unauthorized(message = 'Not authenticated.'): Response {

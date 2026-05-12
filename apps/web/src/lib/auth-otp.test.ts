@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 
 import { makeDbMock } from '@/test/db-mock';
+import { makeEmailMock } from '@/test/email-mock';
+import { makeEnvMock as makeEnvMockHelper } from '@/test/env-mock';
 
 const TEST_SECRET = 'test-secret-at-least-thirty-two-characters-long-please';
 const TEST_EMAIL = 'alice@example.com';
@@ -44,8 +46,10 @@ const fakeSendOtpEmail = mock();
 // to test against, so we stub it out for the test runner.
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
-mock.module('@/env', () => ({ env: { AUTH_SECRET: TEST_SECRET } }));
-mock.module('@/lib/email', () => ({ sendOtpEmail: fakeSendOtpEmail }));
+// Use the full-surface env mock so cross-test-file caching can't strip
+// `features` from the shape downstream tests rely on.
+mock.module('@/env', () => makeEnvMockHelper({ env: { AUTH_SECRET: TEST_SECRET } }));
+mock.module('@/lib/email', () => makeEmailMock({ sendOtpEmail: fakeSendOtpEmail }));
 mock.module('@/lib/rate-limit', () => ({ rateLimitByIp: fakeRateLimitByIp }));
 
 // Now import the SUT — module mocks above intercept its deps.

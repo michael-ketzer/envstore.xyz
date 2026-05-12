@@ -1,0 +1,130 @@
+// Tests for workspace creation + the idempotent personal-workspace
+// bootstrapping called on signup.
+
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+
+import { makeDbMock } from '@/test/db-mock';
+
+const fakePrisma = {
+  user: { findUnique: mock() },
+  workspace: { findUnique: mock(), findFirst: mock(), create: mock() },
+};
+
+mock.module('server-only', () => ({}));
+mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
+
+const { createTeamWorkspace, ensurePersonalWorkspace } = await import('./workspaces');
+
+beforeEach(() => {
+  for (const m of Object.values(fakePrisma)) {
+    for (const fn of Object.values(m)) (fn as ReturnType<typeof mock>).mockReset();
+  }
+});
+
+describe('createTeamWorkspace', () => {
+  test('slug already in use → ok:false slug-taken (no create)', async () => {
+    fakePrisma.workspace.findUnique.mockResolvedValueOnce({ id: 'ws_existing' });
+    const r = await createTeamWorkspace('u_1', { name: 'Acme', slug: 'acme' });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected fail');
+    expect(r.reason).toBe('slug-taken');
+    expect(fakePrisma.workspace.create).not.toHaveBeenCalled();
+  });
+
+  test('reserved slug → ok:false invalid-slug', async () => {
+    const r = await createTeamWorkspace('u_1', { name: 'Admin', slug: 'admin' });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected fail');
+    expect(r.reason).toBe('invalid-slug');
+    expect(fakePrisma.workspace.findUnique).not.toHaveBeenCalled();
+    expect(fakePrisma.workspace.create).not.toHaveBeenCalled();
+  });
+
+  test('happy path → creates workspace as TEAM with trial subscription + owner member', async () => {
+    fakePrisma.workspace.findUnique.mockResolvedValueOnce(null);
+    fakePrisma.workspace.create.mockResolvedValueOnce({ id: 'ws_new', slug: 'acme' });
+
+    const r = await createTeamWorkspace('u_1', { name: 'Acme', slug: 'acme' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.workspace).toEqual({ id: 'ws_new', slug: 'acme' });
+
+    const createArgs = fakePrisma.workspace.create.mock.calls[0]?.[0] as {
+      data: {
+        type: string;
+        ownerId: string;
+        slug: string;
+        members: { create: { userId: string; role: string } };
+        subscription: { create: { status: string; trialEndsAt: Date } };
+      };
+    };
+    expect(createArgs.data.type).toBe('TEAM');
+    expect(createArgs.data.ownerId).toBe('u_1');
+    expect(createArgs.data.members.create.role).toBe('OWNER');
+    expect(createArgs.data.subscription.create.status).toBe('TRIALING');
+    expect(createArgs.data.subscription.create.trialEndsAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('ensurePersonalWorkspace', () => {
+  test('idempotent: existing personal workspace → no-op', async () => {
+    fakePrisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u_1',
+      email: 'alice@example.com',
+      name: 'Alice',
+    });
+    fakePrisma.workspace.findFirst.mockResolvedValueOnce({ id: 'ws_existing' });
+
+    await ensurePersonalWorkspace('u_1');
+    expect(fakePrisma.workspace.create).not.toHaveBeenCalled();
+  });
+
+  test('first call for a user → creates PERSONAL workspace with trial subscription', async () => {
+    fakePrisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u_1',
+      email: 'alice@example.com',
+      name: 'Alice',
+    });
+    fakePrisma.workspace.findFirst.mockResolvedValueOnce(null);
+    fakePrisma.workspace.findUnique.mockResolvedValueOnce(null); // slug pick: alice not taken
+    fakePrisma.workspace.create.mockResolvedValueOnce({ id: 'ws_new' });
+
+    await ensurePersonalWorkspace('u_1');
+    expect(fakePrisma.workspace.create).toHaveBeenCalledTimes(1);
+    const createArgs = fakePrisma.workspace.create.mock.calls[0]?.[0] as {
+      data: { type: string; ownerId: string; slug: string; name: string };
+    };
+    expect(createArgs.data.type).toBe('PERSONAL');
+    expect(createArgs.data.ownerId).toBe('u_1');
+    expect(createArgs.data.slug).toBe('alice');
+    expect(createArgs.data.name).toBe('Alice');
+  });
+
+  test('slug from email-local-part collides → falls back to a suffixed candidate', async () => {
+    fakePrisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u_2',
+      email: 'alice@example.com',
+      name: null,
+    });
+    fakePrisma.workspace.findFirst.mockResolvedValueOnce(null);
+    fakePrisma.workspace.findUnique
+      .mockResolvedValueOnce({ id: 'ws_first_alice' }) // 'alice' taken
+      .mockResolvedValueOnce(null); // suffix candidate is free
+    fakePrisma.workspace.create.mockResolvedValueOnce({ id: 'ws_new' });
+
+    await ensurePersonalWorkspace('u_2');
+    const createArgs = fakePrisma.workspace.create.mock.calls[0]?.[0] as {
+      data: { slug: string; name: string };
+    };
+    // Suffixed: `alice-<6 hex>`.
+    expect(createArgs.data.slug).toMatch(/^alice-[0-9a-f]{6}$/);
+    // Name falls back to "Personal" when user.name is null.
+    expect(createArgs.data.name).toBe('Personal');
+  });
+
+  test('unknown userId → throws (no workspace created)', async () => {
+    fakePrisma.user.findUnique.mockResolvedValueOnce(null);
+    await expect(ensurePersonalWorkspace('u_ghost')).rejects.toThrow(/not found/);
+    expect(fakePrisma.workspace.create).not.toHaveBeenCalled();
+  });
+});

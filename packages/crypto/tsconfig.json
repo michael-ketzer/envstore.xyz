@@ -2,9 +2,9 @@
   "extends": "@envstore/config/tsconfig/base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
-    "types": ["bun"]
+    "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  // *.test.ts is covered by `bun test` at runtime; see packages/shared/tsconfig.json.
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
 }

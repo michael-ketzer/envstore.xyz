@@ -2,9 +2,12 @@
   "extends": "@envstore/config/tsconfig/base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
-    "types": ["bun"]
+    "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  // *.test.ts use `bun:test`, which depends on the bun-types ambient
+  // package chain (@types/bun → bun-types → @types/node). Pulling that
+  // into the production tsconfig made CI flaky on hoist differences.
+  // `bun test` validates these files at run time with its own resolution.
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
 }

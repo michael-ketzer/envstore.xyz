@@ -4,8 +4,13 @@
     "lib": ["ES2023"],
     "types": ["bun"],
     "outDir": "./dist",
+    "rootDir": "./src",
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "dist", "bin"]
+  // `test/` is intentionally excluded from `tsc --noEmit`. `bun test` does
+  // type-aware execution of those files with its own resolution for
+  // `bun:test`; tsc's `@types/bun` → `bun-types` → `@types/node` reference
+  // chain has hoist-sensitive failure modes in CI.
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "bin", "test"]
 }

@@ -4,9 +4,8 @@
     "lib": ["ES2023"],
     "types": ["bun"],
     "outDir": "./dist",
-    "rootDir": "./src",
     "noEmit": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist", "bin"]
 }

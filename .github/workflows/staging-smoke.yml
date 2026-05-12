@@ -1,0 +1,151 @@
+name: staging smoke
+
+# Live-API smoke test: download the released binary, point it at a staging
+# deployment, and round-trip a push → pull through real R2. Verifies that the
+# end-to-end flow (network, auth, encryption, R2 presign, decrypt) actually
+# works against a deployed envstore — something neither unit nor api-stubbed
+# tests can catch (e.g. an env-var rename in the CLI vs. the deployed server,
+# or a recipient-set hash drift across versions).
+#
+# This workflow needs four repo secrets to run. If ANY are missing, the
+# `gate` job skips the rest with a clear message rather than failing on a
+# null env var — that way the workflow file can live in the repo before
+# staging exists.
+#
+#   STAGING_API_URL       — e.g. https://staging.envstore.xyz
+#   STAGING_WORKSPACE     — workspace slug to push/pull against (test fixture)
+#   STAGING_PROJECT       — project slug inside that workspace
+#   STAGING_TOKEN         — workspace service token (eswtok_…), revocable
+#   STAGING_IDENTITY      — age private key matching the token's recipient
+#
+# Set them in repo Settings → Secrets and variables → Actions. Use a token
+# scoped to ONLY the test project so a leak from this workflow can't reach
+# real customer data.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to smoke-test (e.g. v0.7.0). Defaults to the latest.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Check secrets are present
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
+          STAGING_WORKSPACE: ${{ secrets.STAGING_WORKSPACE }}
+          STAGING_PROJECT: ${{ secrets.STAGING_PROJECT }}
+          STAGING_TOKEN: ${{ secrets.STAGING_TOKEN }}
+          STAGING_IDENTITY: ${{ secrets.STAGING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for v in STAGING_API_URL STAGING_WORKSPACE STAGING_PROJECT STAGING_TOKEN STAGING_IDENTITY; do
+            if [ -z "${!v:-}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::staging-smoke skipped — missing secrets:$missing"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  smoke:
+    name: Push → pull round-trip
+    needs: gate
+    if: needs.gate.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            tag="${{ github.event.release.tag_name }}"
+          else
+            # Manual run without input — pick the latest published release.
+            tag="$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName)"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Smoke-testing release: ${tag}"
+
+      - name: Download released binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "envstore-linux-x64" \
+            --pattern "envstore-linux-x64.sha256"
+          sha256sum -c envstore-linux-x64.sha256
+          chmod +x envstore-linux-x64
+          mv envstore-linux-x64 envstore
+
+      - name: Stage workspace fixture
+        env:
+          STAGING_WORKSPACE: ${{ secrets.STAGING_WORKSPACE }}
+          STAGING_PROJECT: ${{ secrets.STAGING_PROJECT }}
+        run: |
+          set -euo pipefail
+          cat > envstore.json <<EOF
+          {
+            "workspace": "${STAGING_WORKSPACE}",
+            "project": "${STAGING_PROJECT}",
+            "defaultEnv": "development"
+          }
+          EOF
+          # Generate a unique sentinel so each smoke run is distinguishable in
+          # the staging audit log and we can verify pull returned THIS push's
+          # plaintext, not a leftover from a previous run.
+          sentinel="smoke-$(date -u +%Y%m%dT%H%M%SZ)-${{ github.run_id }}"
+          echo "SMOKE_SENTINEL=${sentinel}" > .env
+          echo "MARKER=ok" >> .env
+          echo "sentinel=${sentinel}" >> "$GITHUB_ENV"
+
+      - name: Push
+        env:
+          ENVSTORE_API_URL: ${{ secrets.STAGING_API_URL }}
+          ENVSTORE_TOKEN: ${{ secrets.STAGING_TOKEN }}
+          ENVSTORE_IDENTITY: ${{ secrets.STAGING_IDENTITY }}
+        run: ./envstore push
+
+      - name: Pull and verify the sentinel round-trips
+        env:
+          ENVSTORE_API_URL: ${{ secrets.STAGING_API_URL }}
+          ENVSTORE_TOKEN: ${{ secrets.STAGING_TOKEN }}
+          ENVSTORE_IDENTITY: ${{ secrets.STAGING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          # Pulling overwrites .env — but we want to confirm it returns the
+          # plaintext we just pushed. Move our copy aside, pull fresh, diff.
+          mv .env .env.local-original
+          ./envstore pull --force
+          if ! grep -q "SMOKE_SENTINEL=${sentinel}" .env; then
+            echo "::error::Round-trip failed — pulled .env does not contain the sentinel we just pushed." >&2
+            echo "Expected sentinel: ${sentinel}"
+            echo "Pulled file contents:"; cat .env
+            exit 1
+          fi
+          if ! grep -q "MARKER=ok" .env; then
+            echo "::error::Pulled file is missing MARKER=ok line." >&2
+            cat .env
+            exit 1
+          fi
+          echo "Round-trip OK: pushed and pulled the same plaintext."

@@ -47,11 +47,14 @@ const pushInitSchema = z.object({
   recipientsHash: z.string().regex(/^[0-9a-f]{64}$/, 'recipientsHash must be lowercase hex(64)'),
   // Reject NUL + DEL + most C0 controls (newlines allowed since comments
   // can be multi-line); see safe-string.ts for the same rationale applied
-  // to display fields.
+  // to display fields. The literal control chars in the regex below are the
+  // exact set we want to refuse — the lint rule otherwise meant to catch
+  // accidental control chars in regexes doesn't apply here.
   comment: z
     .string()
     .max(LIMITS.commentMax)
     .refine(
+      // eslint-disable-next-line no-control-regex
       (s) => !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(s),
       'comment must not contain control characters',
     )

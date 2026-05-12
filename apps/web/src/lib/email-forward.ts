@@ -40,6 +40,10 @@ export class EmailForwardNotConfiguredError extends Error {
 // untrusted-but-syntactically-valid input that nonetheless looks weird.
 function looksLikeEmailAddress(raw: string): boolean {
   if (raw.length === 0 || raw.length > 320) return false;
+  // The literal NUL in this character class is exactly what we want to
+  // refuse (header-injection / smuggling defense), not an accidental
+  // typo — the lint rule meant to catch the latter doesn't apply.
+  // eslint-disable-next-line no-control-regex
   if (/[\r\n\x00]/.test(raw)) return false;
   // Bare `local@host` form, or `Display Name <local@host>`.
   return /^[^<>]*<[^<>@\s]+@[^<>@\s]+>\s*$|^[^<>@\s]+@[^<>@\s]+$/.test(raw);

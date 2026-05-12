@@ -127,6 +127,11 @@ model Workspace {
   // Soft delete + per-workspace retention setting for nested soft-deletes
   deletedAt               DateTime?
   softDeleteRetentionDays Int       @default(30)
+  // Number of past versions to keep per environment. Older versions get
+  // pruned (DB row + R2 object) on every successful push. The current
+  // version (Environment.currentVersionId) is always preserved regardless
+  // of cap. Defaults to 50; owner-only setting, range 5–500.
+  versionHistoryLimit     Int       @default(50)
 
   owner         User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
   members       WorkspaceMember[]

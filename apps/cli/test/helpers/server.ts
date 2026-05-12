@@ -36,6 +36,20 @@ export type WorkspaceFixture = {
   type: 'PERSONAL' | 'TEAM';
   projects: Map<string, ProjectFixture>; // projectSlug → project
   recipients: string[]; // age public keys the workspace encrypts to
+  // Workspace-level version-history cap. Surfaced on the versions-list
+  // response so CLI/dashboard tests can assert it round-trips correctly.
+  versionHistoryLimit?: number;
+};
+
+// Pointer per (workspace, project, env) into the current version. Maps a
+// fixture identity to the version a `pull` (or rollback target) should
+// return. Tests that don't set anything explicitly fall back to the
+// newest version in the array.
+export type CurrentVersionPointer = {
+  workspaceSlug: string;
+  projectSlug: string;
+  envSlug: string;
+  versionId: string;
 };
 
 export type MockServerState = {
@@ -43,6 +57,9 @@ export type MockServerState = {
   // Per-call overrides — let a single test stage a one-off response without
   // permanently mutating the fixture state.
   pushInitOverride?: (req: Request) => Promise<Response> | Response;
+  // Explicit current-version pointers. If a key is present, the versions
+  // and pull endpoints respect it; absent → newest-in-array semantics.
+  currentVersions?: CurrentVersionPointer[];
 };
 
 export type MockServer = {
@@ -57,6 +74,29 @@ const json = (status: number, body: unknown) =>
     status,
     headers: { 'content-type': 'application/json' },
   });
+
+// Default current = newest version, BUT respect any explicit pointer the
+// test pinned via state.currentVersions. Used by both /pull and the
+// versions/rollback handlers so they share semantics.
+function resolveCurrent(
+  state: MockServerState,
+  workspaceSlug: string,
+  projectSlug: string,
+  envSlug: string,
+  versions: EnvVersionFixture[],
+): EnvVersionFixture | undefined {
+  const pinned = state.currentVersions?.find(
+    (c) =>
+      c.workspaceSlug === workspaceSlug &&
+      c.projectSlug === projectSlug &&
+      c.envSlug === envSlug,
+  );
+  if (pinned) {
+    const found = versions.find((v) => v.versionId === pinned.versionId);
+    if (found) return found;
+  }
+  return versions[versions.length - 1];
+}
 
 export async function startMockServer(state: MockServerState): Promise<MockServer> {
   const requests: RecordedRequest[] = [];
@@ -287,7 +327,7 @@ export async function startMockServer(state: MockServerState): Promise<MockServe
         if (!ws || !proj) return json(404, { error: 'Not found.' });
         const envSlug = url.searchParams.get('env') ?? 'development';
         const versions = proj.environments.get(envSlug) ?? [];
-        const current = versions[versions.length - 1];
+        const current = resolveCurrent(state, ws.slug, proj.slug, envSlug, versions);
         if (!current) return json(404, { error: 'Environment has no pushed version yet.' });
         return json(200, {
           versionId: current.versionId,
@@ -299,6 +339,82 @@ export async function startMockServer(state: MockServerState): Promise<MockServe
           recipientsHash: current.recipientsHash,
           downloadUrl: `${url.origin}/r2/${current.versionId}`,
           expiresIn: 300,
+        });
+      }
+
+      // GET /api/v1/workspaces/<ws>/projects/<proj>/environments/<env>/versions
+      m = /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/versions$/.exec(
+        url.pathname,
+      );
+      if (method === 'GET' && m) {
+        const ws = state.workspaces.get(m[1]!);
+        const proj = ws?.projects.get(m[2]!);
+        if (!ws || !proj) return json(404, { error: 'Not found.' });
+        const envSlug = m[3]!;
+        const versions = proj.environments.get(envSlug) ?? [];
+        const current = resolveCurrent(state, ws.slug, proj.slug, envSlug, versions);
+        // Newest-first response shape matches the real API.
+        const ordered = [...versions].sort((a, b) => b.version - a.version);
+        return json(200, {
+          environmentSlug: envSlug,
+          versionHistoryLimit: ws.versionHistoryLimit ?? 50,
+          versions: ordered.map((v) => ({
+            id: v.versionId,
+            version: v.version,
+            ciphertextSize: v.ciphertext.byteLength,
+            comment: null,
+            createdAt: new Date().toISOString(),
+            createdByEmail: 'test@example.com',
+            current: current ? v.versionId === current.versionId : false,
+          })),
+        });
+      }
+
+      // POST /api/v1/workspaces/<ws>/projects/<proj>/environments/<env>/current
+      m = /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/current$/.exec(
+        url.pathname,
+      );
+      if (method === 'POST' && m) {
+        const ws = state.workspaces.get(m[1]!);
+        const proj = ws?.projects.get(m[2]!);
+        if (!ws || !proj) return json(404, { error: 'Not found.' });
+        const envSlug = m[3]!;
+        const versions = proj.environments.get(envSlug) ?? [];
+        const body = bodyJson as { versionId?: string; version?: number };
+        if (!body || (!body.versionId && body.version === undefined)) {
+          return json(400, { error: 'pass exactly one of `versionId` or `version`' });
+        }
+        const target = body.versionId
+          ? versions.find((v) => v.versionId === body.versionId)
+          : versions.find((v) => v.version === body.version);
+        if (!target) return json(404, { error: 'Version not found.' });
+
+        const previous = resolveCurrent(state, ws.slug, proj.slug, envSlug, versions);
+        const isNoop = previous?.versionId === target.versionId;
+        if (!isNoop) {
+          // Record the new current pointer.
+          state.currentVersions = state.currentVersions ?? [];
+          const existingIdx = state.currentVersions.findIndex(
+            (c) =>
+              c.workspaceSlug === ws.slug &&
+              c.projectSlug === proj.slug &&
+              c.envSlug === envSlug,
+          );
+          const entry: CurrentVersionPointer = {
+            workspaceSlug: ws.slug,
+            projectSlug: proj.slug,
+            envSlug,
+            versionId: target.versionId,
+          };
+          if (existingIdx >= 0) state.currentVersions[existingIdx] = entry;
+          else state.currentVersions.push(entry);
+        }
+        return json(200, {
+          ok: true,
+          noop: isNoop,
+          versionId: target.versionId,
+          version: target.version,
+          environmentSlug: envSlug,
         });
       }
 

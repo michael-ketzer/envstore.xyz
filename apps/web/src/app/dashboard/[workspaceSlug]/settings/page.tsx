@@ -58,6 +58,7 @@ export default async function WorkspaceSettingsPage({
             defaultName={ws.name}
             defaultDescription={ws.description ?? ''}
             defaultRetention={ws.softDeleteRetentionDays}
+            defaultVersionHistoryLimit={ws.versionHistoryLimit}
           />
         ) : (
           <div className="rounded-md border border-border bg-muted/30 p-4 text-sm text-muted-foreground">

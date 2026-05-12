@@ -138,7 +138,7 @@ export default async function ProjectPage({
         ) : (
           <ul className="mt-4 divide-y divide-border rounded-md border border-border">
             {project.environments.map((env) => (
-              <li key={env.id} className="flex items-center justify-between px-5 py-4">
+              <li key={env.id} className="flex items-center justify-between gap-4 px-5 py-4">
                 <div>
                   <div className="flex items-baseline gap-3">
                     <span className="font-medium">{env.name}</span>
@@ -150,15 +150,25 @@ export default async function ProjectPage({
                     autodetected as <code className="font-mono">{env.slug}</code>
                   </div>
                 </div>
-                <div className="text-right text-xs text-muted-foreground">
+                <div className="flex items-center gap-4">
+                  <div className="text-right text-xs text-muted-foreground">
+                    {env.currentVersion ? (
+                      <>
+                        <div>v{env.currentVersion.version}</div>
+                        <div>{env._count.versions} total</div>
+                      </>
+                    ) : (
+                      <span className="italic">never pushed</span>
+                    )}
+                  </div>
                   {env.currentVersion ? (
-                    <>
-                      <div>v{env.currentVersion.version}</div>
-                      <div>{env._count.versions} total</div>
-                    </>
-                  ) : (
-                    <span className="italic">never pushed</span>
-                  )}
+                    <Link
+                      href={`/dashboard/${workspaceSlug}/${project.slug}/environments/${env.slug}`}
+                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                    >
+                      History
+                    </Link>
+                  ) : null}
                 </div>
               </li>
             ))}

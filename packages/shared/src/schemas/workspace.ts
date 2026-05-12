@@ -16,6 +16,12 @@ export const workspaceCreateSchema = z.object({
   slug: workspaceSlugSchema,
 });
 
+// Version-history cap range. Floor is high enough that "always keep a
+// useful timeline" is preserved on the busiest envs; ceiling guards
+// runaway R2 costs from a misconfigured workspace.
+export const VERSION_HISTORY_LIMIT_MIN = 5;
+export const VERSION_HISTORY_LIMIT_MAX = 500;
+
 export const workspaceUpdateSchema = z.object({
   name: workspaceNameSchema.optional(),
   // Descriptions can be longer than names but still flow through the same
@@ -31,6 +37,12 @@ export const workspaceUpdateSchema = z.object({
     .nullable()
     .optional(),
   softDeleteRetentionDays: z.number().int().min(0).max(365).optional(),
+  versionHistoryLimit: z
+    .number()
+    .int()
+    .min(VERSION_HISTORY_LIMIT_MIN)
+    .max(VERSION_HISTORY_LIMIT_MAX)
+    .optional(),
 });
 
 export type WorkspaceCreateInput = z.infer<typeof workspaceCreateSchema>;

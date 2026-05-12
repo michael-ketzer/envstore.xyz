@@ -24,10 +24,18 @@ const fakePrisma = {
 };
 
 const fakeHeadObject = mock();
+const fakePrune = mock();
 
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: fakePrisma }));
 mock.module('@/lib/r2', () => makeR2Mock({ headObject: fakeHeadObject }));
+// Mock the version-sweep so finalize tests don't need to stub its
+// internal prisma calls. Separate tests in version-sweep.test.ts cover
+// the sweep itself; here we only assert finalize CALLS it with the
+// workspace's configured limit.
+mock.module('@/lib/version-sweep', () => ({
+  pruneEnvironmentHistory: fakePrune,
+}));
 
 const { POST } = await import('./route');
 
@@ -36,6 +44,8 @@ beforeEach(() => {
     for (const fn of Object.values(m)) (fn as ReturnType<typeof mock>).mockReset();
   }
   fakeHeadObject.mockReset();
+  fakePrune.mockReset();
+  fakePrune.mockResolvedValue({ prunedVersions: 0, prunedR2Objects: 0, r2Skipped: false });
   fakePrisma.cliToken.update.mockResolvedValue({});
   fakePrisma.workspaceToken.update.mockResolvedValue({});
   fakePrisma.environment.update.mockResolvedValue({});
@@ -95,7 +105,11 @@ function stageWorkspaceAndProject() {
   fakePrisma.project.findFirst.mockResolvedValueOnce({ id: 'proj_api' });
 }
 
-function stageVersion(opts: { ciphertextSize: number; r2Key?: string } = { ciphertextSize: 100 }) {
+function stageVersion(
+  opts: { ciphertextSize: number; r2Key?: string; versionHistoryLimit?: number } = {
+    ciphertextSize: 100,
+  },
+) {
   fakePrisma.envFileVersion.findFirst.mockResolvedValueOnce({
     id: 'ver_1',
     version: 1,
@@ -104,7 +118,10 @@ function stageVersion(opts: { ciphertextSize: number; r2Key?: string } = { ciphe
     environment: {
       id: 'env_dev',
       slug: 'development',
-      project: { workspaceId: 'ws_1' },
+      project: {
+        workspaceId: 'ws_1',
+        workspace: { versionHistoryLimit: opts.versionHistoryLimit ?? 50 },
+      },
     },
   });
 }
@@ -206,5 +223,74 @@ describe('POST /finalize — auth + scope gates', () => {
     const res = await POST(buildReq('user-bearer'), ctx);
     expect(res.status).toBe(404);
     expect(fakeHeadObject).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /finalize — version-history prune integration', () => {
+  test('happy path → prune called with (envId, workspace.versionHistoryLimit)', async () => {
+    await stageUserAuth('user-bearer');
+    stageWorkspaceAndProject();
+    stageVersion({ ciphertextSize: 100, versionHistoryLimit: 25 });
+    fakeHeadObject.mockResolvedValueOnce({ contentLength: 100 });
+
+    const res = await POST(buildReq('user-bearer'), ctx);
+    expect(res.status).toBe(200);
+    expect(fakePrune).toHaveBeenCalledTimes(1);
+    expect(fakePrune).toHaveBeenCalledWith('env_dev', 25);
+  });
+
+  test('prune reports work done → counts appear in audit metadata', async () => {
+    await stageUserAuth('user-bearer');
+    stageWorkspaceAndProject();
+    stageVersion({ ciphertextSize: 100 });
+    fakeHeadObject.mockResolvedValueOnce({ contentLength: 100 });
+    fakePrune.mockResolvedValueOnce({
+      prunedVersions: 3,
+      prunedR2Objects: 3,
+      r2Skipped: false,
+    });
+
+    const res = await POST(buildReq('user-bearer'), ctx);
+    expect(res.status).toBe(200);
+    const audit = fakePrisma.auditLog.create.mock.calls[0]?.[0] as {
+      data: { metadata: Record<string, unknown> };
+    };
+    expect(audit.data.metadata).toMatchObject({
+      prunedVersions: 3,
+      prunedR2Objects: 3,
+      r2Skipped: false,
+    });
+  });
+
+  test('prune throws → finalize still returns 200 (push succeeded); audit notes pruneError', async () => {
+    await stageUserAuth('user-bearer');
+    stageWorkspaceAndProject();
+    stageVersion({ ciphertextSize: 100 });
+    fakeHeadObject.mockResolvedValueOnce({ contentLength: 100 });
+    fakePrune.mockRejectedValueOnce(new Error('R2 transient blip'));
+
+    const res = await POST(buildReq('user-bearer'), ctx);
+    // Push was already finalized at this point. Don't fail the call on
+    // cleanup error — leave it for the next push to retry.
+    expect(res.status).toBe(200);
+    const audit = fakePrisma.auditLog.create.mock.calls[0]?.[0] as {
+      data: { metadata: Record<string, unknown> };
+    };
+    expect(audit.data.metadata).toMatchObject({ pruneError: 'R2 transient blip' });
+  });
+
+  test('prune reports zero pruned → no prune-count fields in audit metadata', async () => {
+    await stageUserAuth('user-bearer');
+    stageWorkspaceAndProject();
+    stageVersion({ ciphertextSize: 100 });
+    fakeHeadObject.mockResolvedValueOnce({ contentLength: 100 });
+
+    const res = await POST(buildReq('user-bearer'), ctx);
+    expect(res.status).toBe(200);
+    const audit = fakePrisma.auditLog.create.mock.calls[0]?.[0] as {
+      data: { metadata: Record<string, unknown> };
+    };
+    expect(audit.data.metadata).not.toHaveProperty('prunedVersions');
+    expect(audit.data.metadata).not.toHaveProperty('pruneError');
   });
 });

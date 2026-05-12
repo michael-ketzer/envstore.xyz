@@ -30,4 +30,4 @@ export function identityFile(): string {
   return join(configDir(), 'identity.age');
 }
 
-export const CLI_VERSION = '0.7.0';
+export const CLI_VERSION = '0.8.0';

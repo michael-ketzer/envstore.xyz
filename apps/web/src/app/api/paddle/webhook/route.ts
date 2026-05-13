@@ -113,7 +113,11 @@ export async function POST(req: Request): Promise<Response> {
     // Transaction rolled back. processedAt was never stamped (and the
     // receivedAt row was rolled back too if it was a fresh insert), so the
     // next Paddle retry re-runs dispatch from a clean slate.
-    console.error('Paddle webhook dispatch failed:', err);
+    // Only log the message — Paddle exceptions can include event payload
+    // fragments (customer IDs, addresses, etc.). The eventId is enough to
+    // correlate with `paddleWebhookEvent` rows for forensic follow-up.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Paddle webhook dispatch failed (event ${event.eventId}):`, message);
     return apiError('Webhook handler failed.', 500);
   }
 }

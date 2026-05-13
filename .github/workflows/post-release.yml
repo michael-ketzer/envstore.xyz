@@ -5,7 +5,10 @@ name: post-release smoke
 #   1. `--version` matches the release tag (catches "wrong version baked in").
 #   2. The .sha256 sidecar matches the binary we downloaded (catches a
 #      corrupted upload).
-#   3. `help` returns 0 and prints something sensible (catches a binary that
+#   3. If RELEASE_SIGNING_PUBKEY is configured, the .minisig signature
+#      verifies against the pinned public key (catches a tampered release
+#      or a wrong key in CI).
+#   4. `help` returns 0 and prints something sensible (catches a binary that
 #      compiles but can't even open its own help text).
 #
 # This deliberately does NOT touch a live API. A staging end-to-end test
@@ -38,7 +41,7 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Download binary + sha256 sidecar
+      - name: Download binary + sha256 + (optional) minisig sidecar
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -46,8 +49,12 @@ jobs:
           gh release download "${{ steps.tag.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --pattern "${{ matrix.target }}" \
-            --pattern "${{ matrix.target }}.sha256"
+            --pattern "${{ matrix.target }}.sha256" \
+            --pattern "${{ matrix.target }}.minisig" || true
           ls -la "${{ matrix.target }}" "${{ matrix.target }}.sha256"
+          # minisig is optional during rollout — release.yml only emits it once
+          # MINISIGN_PRIVATE_KEY is configured. Don't fail this step if absent.
+          ls -la "${{ matrix.target }}.minisig" 2>/dev/null || echo "no .minisig sidecar (signing not yet enabled)"
 
       - name: Verify sha256 sidecar
         # macOS doesn't ship sha256sum by default — use shasum -a 256 on Darwin.
@@ -59,6 +66,34 @@ jobs:
           else
             shasum -a 256 -c "${{ matrix.target }}.sha256"
           fi
+
+      - name: Verify minisign signature
+        # Hard fail if RELEASE_SIGNING_PUBKEY is configured (we expect every
+        # release to ship a valid .minisig) but soft-skip if not (initial
+        # rollout / pre-key world). The actual installer enforces the same
+        # invariant via the pinned PUBKEY env var.
+        env:
+          RELEASE_SIGNING_PUBKEY: ${{ vars.RELEASE_SIGNING_PUBKEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_SIGNING_PUBKEY:-}" ]; then
+            echo "::notice::RELEASE_SIGNING_PUBKEY not configured — skipping signature verification."
+            exit 0
+          fi
+          if [ ! -f "${{ matrix.target }}.minisig" ]; then
+            echo "::error::Pubkey is configured but ${{ matrix.target }}.minisig is missing from this release. Did the signing step in release.yml run?"
+            exit 1
+          fi
+          # Install minisign on the smoke runner. Linux: apt. macOS: homebrew.
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update >/dev/null
+            sudo apt-get install -y minisign >/dev/null
+          else
+            brew install minisign >/dev/null
+          fi
+          minisign -V -P "$RELEASE_SIGNING_PUBKEY" \
+            -m "${{ matrix.target }}" \
+            -x "${{ matrix.target }}.minisig"
 
       - name: Make executable
         run: chmod +x "${{ matrix.target }}"

@@ -40,8 +40,16 @@ export async function POST(req: Request) {
 
   const result = await redeemLinkCode({ code: parsed.data.code, userId: userAuth.user.id });
   if (!result.ok) {
-    const status = result.reason === 'not-found' ? 404 : 403;
-    return apiError(result.message, status);
+    // Collapse "code doesn't exist" and "code exists but you're not a member"
+    // into the same 404 + uniform message. Distinguishing the two is a
+    // computationally-inert info leak given the 32^8 ≈ 10^12 code space + IP
+    // rate limit, but the cleaner pattern is to deny existence to the caller.
+    // Legit users who get this for a real code will check the code and ask
+    // their workspace admin for an invite.
+    return apiError(
+      'Code not found, or you are not a member of its workspace.',
+      404,
+    );
   }
 
   await recordAudit({

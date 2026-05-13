@@ -111,7 +111,10 @@ export async function POST(req: Request, ctx: Ctx) {
     r2Skipped = result.r2Skipped;
   } catch (err) {
     pruneError = (err as Error).message;
-    console.error('Version-history prune failed:', err);
+    // Log only the error message string — never spread the full exception, which
+    // can carry SDK response bodies, headers, or other operational data that
+    // shouldn't land in runtime logs.
+    console.error('Version-history prune failed:', pruneError);
   }
 
   await recordAudit({

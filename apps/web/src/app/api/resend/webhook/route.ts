@@ -68,7 +68,11 @@ export async function POST(req: Request): Promise<Response> {
     if (err instanceof EmailForwardNotConfiguredError) {
       return apiError(err.message, 503);
     }
-    console.error('Resend inbound forwarding failed:', err);
+    // Log only the message — the raw exception can include the inbound
+    // email body, subject, or attachment metadata via Resend SDK errors,
+    // and we don't want forwarded mail content tee'd into runtime logs.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Resend inbound forwarding failed:', message);
     // Return 500 so Resend retries.
     return apiError('Forwarding failed.', 500);
   }

@@ -86,6 +86,22 @@ model VerificationToken {
   @@index([identifier])
 }
 
+// Per-email rolling failure counter for OTP verification. The `attempts`
+// counter on VerificationToken caps brute force against ONE code (5 tries →
+// row burned); this counter caps brute force across an email's entire 24h
+// window of OTP issuances. An attacker who triggers a fresh OTP every few
+// minutes can otherwise spend 5 guesses per code × 10 codes/h × 24h ≈ 1200
+// guesses/day against a 6-digit space. With this budget capped at 20 per
+// 24h, the same attacker burns through the budget in minutes and then
+// can't make further failed verify attempts against that address until
+// the window expires (or a successful verify resets it).
+model OtpFailureBudget {
+  identifier   String   @id // lowercase email, matches VerificationToken.identifier
+  failureCount Int      @default(0)
+  windowStart  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 // =============================================================================
 // Zero-knowledge identity — PUBLIC recipients only.
 // We deliberately never store any private key material.

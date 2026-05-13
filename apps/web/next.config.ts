@@ -62,6 +62,28 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Apex → www canonicalization. We run this through Next.js (rather than
+  // letting Vercel's platform-level "redirect to canonical" do it) so the
+  // 308 response carries the same security headers — including the full
+  // `Strict-Transport-Security: …; includeSubDomains; preload` value above —
+  // as every other response. Vercel's edge redirect emits only a minimal
+  // HSTS, which disqualifies the apex hostname from the HSTS preload list
+  // and leaves first-visit MITM downgrade exposure on `http://envstore.xyz`.
+  //
+  // DEPLOYMENT NOTE: this only takes effect once the platform-level
+  // "redirect to www.envstore.xyz" toggle is removed in Vercel → Project →
+  // Domains. Until then the platform redirect runs first and Next never
+  // sees the apex request.
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'envstore.xyz' }],
+        destination: 'https://www.envstore.xyz/:path*',
+        permanent: true,
+      },
+    ];
+  },
   // Default to Turbopack (Next 16) — no extra config needed.
 };
 

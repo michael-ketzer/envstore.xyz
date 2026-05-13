@@ -125,7 +125,7 @@ under [Roadmap](#roadmap).
       text-only + 1 MB cap enforcement
 - [x] R2 storage with presigned URLs (split read/write planned)
 - [x] Setup codes for one-command project linking
-- [x] Rate limiting on auth endpoints, security headers, 365-day CLI token TTL
+- [x] Rate limiting on auth endpoints, security headers, 90-day CLI token TTL
 - [x] Paddle billing integration (checkout, webhook, trial enforcement)
 - [ ] Version history + rollback UI; `envstore versions` / `envstore rollback`
 - [x] `envstore rekey` — re-encrypt to current recipient set

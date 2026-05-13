@@ -100,6 +100,47 @@ jobs:
           cp THIRD_PARTY_LICENSES.md release/THIRD_PARTY_LICENSES.md
           ls -la release/
 
+      # Cryptographic signature for every binary. Defends against a compromised
+      # GitHub release publisher — the .sha256 sidecar can be regenerated if
+      # the binary is swapped, but the .minisig can't be without the offline
+      # private key. The MINISIGN_PRIVATE_KEY secret should be a no-password
+      # minisign secret-key file (generate locally with `minisign -W -G`); the
+      # matching public key lives in the deployed installer + a committed
+      # RELEASE_SIGNING.pub for transparency.
+      #
+      # Skipped (with a loud log) if the secret isn't configured yet, so this
+      # workflow keeps producing releases during the initial rollout. The
+      # installer side enforces "require signature" only when its pinned
+      # RELEASE_SIGNING_PUBKEY is set, so the two roll forward in lockstep.
+      - name: Sign release binaries with minisign
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MINISIGN_PRIVATE_KEY:-}" ]; then
+            echo "::warning::MINISIGN_PRIVATE_KEY is not configured — release will ship UNSIGNED."
+            echo "::warning::See apps/web/src/app/install/route.ts header for setup instructions."
+            exit 0
+          fi
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y minisign >/dev/null
+          # Stage the key in a temp file with mode 600 so the secret never
+          # lands in shell history or a process arg list. Wipe on exit.
+          KEYFILE="$(mktemp)"
+          chmod 600 "$KEYFILE"
+          trap 'shred -u "$KEYFILE" 2>/dev/null || rm -f "$KEYFILE"' EXIT
+          printf '%s\n' "$MINISIGN_PRIVATE_KEY" > "$KEYFILE"
+          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            # -W: the key has no password (it's already protected by GH secrets).
+            # -t: trusted comment travels with the signature.
+            ( cd release && \
+              minisign -S -W -s "$KEYFILE" \
+                -m "envstore-$target" \
+                -x "envstore-$target.minisig" \
+                -t "envstore ${{ github.ref_name }} envstore-$target" )
+          done
+          ls -la release/
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

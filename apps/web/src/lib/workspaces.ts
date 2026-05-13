@@ -11,14 +11,21 @@ import {
   type WorkspaceCreateInput,
 } from '@envstore/shared';
 
-// Pick a unique workspace slug. Starts from `base`, falls back to `base-<6-hex>` on collision.
+// Pick a unique workspace slug. Starts from `base`, falls back to `base-<6-hex>`
+// on collision or when the sanitized base would clash with a reserved slug
+// (`admin`, `api`, `dashboard`, …). A reserved bare slug confuses the dashboard
+// router and is rejected for team workspaces, so personal workspaces shouldn't
+// be allowed to claim one either.
 async function pickUniqueSlug(base: string): Promise<string> {
   const sanitized = slugify(base) || 'workspace';
-  const existing = await prisma.workspace.findUnique({ where: { slug: sanitized } });
-  if (!existing) return sanitized;
+  if (validateWorkspaceSlug(sanitized).ok) {
+    const existing = await prisma.workspace.findUnique({ where: { slug: sanitized } });
+    if (!existing) return sanitized;
+  }
   for (let i = 0; i < 4; i++) {
     const suffix = randomBytes(3).toString('hex');
     const candidate = `${sanitized}-${suffix}`.slice(0, 40);
+    if (!validateWorkspaceSlug(candidate).ok) continue;
     const clash = await prisma.workspace.findUnique({ where: { slug: candidate } });
     if (!clash) return candidate;
   }
@@ -35,9 +42,13 @@ export async function ensurePersonalWorkspace(userId: string): Promise<void> {
   });
   if (existing) return;
 
-  // Slug must be unique globally — fall back to the email prefix for uniqueness
-  // but keep the human-readable name generic. The user renames both from settings.
-  const baseSlug = user.email.split('@')[0] ?? 'me';
+  // Slug is opaque random — we used to derive it from the email local-part
+  // (`alice@…` → `alice`), which leaked the address as a URL segment and in
+  // any audit-log row that referenced the workspace by slug. The personal
+  // workspace is navigated via the magic `/dashboard/me` URL regardless of
+  // the stored slug, so there's no UX cost to making it opaque. Users can
+  // still rename from settings if they want a memorable handle.
+  const baseSlug = `personal-${randomBytes(3).toString('hex')}`;
   const slug = await pickUniqueSlug(baseSlug);
   const name = user.name?.trim() || 'Personal';
   const trialEndsAt = new Date(Date.now() + PRICING.trialDays * 24 * 60 * 60 * 1000);

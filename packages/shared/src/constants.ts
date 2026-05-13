@@ -20,6 +20,15 @@ export const DEFAULTS = {
   otpDigits: 6,
   otpExpiryMinutes: 10,
   otpMaxAttempts: 5,
+  // Cross-OTP failure budget: max wrong-code submissions for a single email
+  // across ALL of its OTPs within `otpFailureWindowHours`. The per-row
+  // `otpMaxAttempts` cap (5) handles brute force against one code; this caps
+  // an attacker who cycles fresh codes. 20 failures per 24h is generous for
+  // a legit fumble-fingered user (4 fresh codes × 5 attempts = 20) but cuts
+  // the distributed-attacker yield from ~10 codes/h × 5 = 50 guesses/h down
+  // to ~20/day per email.
+  otpMaxFailuresPerWindow: 20,
+  otpFailureWindowHours: 24,
   // CLI device-code auth — how long the user has to confirm in browser.
   deviceCodeExpiryMinutes: 10,
   // How many seconds the CLI should wait between polls. The server may bump

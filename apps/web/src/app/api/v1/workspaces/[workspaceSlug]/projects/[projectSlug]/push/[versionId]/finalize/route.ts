@@ -110,8 +110,15 @@ export async function POST(req: Request, ctx: Ctx) {
     prunedR2Objects = result.prunedR2Objects;
     r2Skipped = result.r2Skipped;
   } catch (err) {
-    pruneError = (err as Error).message;
-    console.error('Version-history prune failed:', err);
+    // Normalize non-Error throws to a usable string — matches the pattern in
+    // paddle/webhook and resend/webhook. `(err as Error).message` would be
+    // undefined for a thrown string/number/etc., which would land "undefined"
+    // in both the audit-log metadata and the runtime log.
+    pruneError = err instanceof Error ? err.message : String(err);
+    // Log only the error message string — never spread the full exception, which
+    // can carry SDK response bodies, headers, or other operational data that
+    // shouldn't land in runtime logs.
+    console.error('Version-history prune failed:', pruneError);
   }
 
   await recordAudit({

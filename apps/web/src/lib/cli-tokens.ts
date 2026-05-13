@@ -14,10 +14,14 @@ import { DEFAULTS } from '@envstore/shared';
 
 const TOKEN_PREFIX = 'est_';
 
-// Default lifetime. Forces re-`envstore login` once a year so an accidentally
-// leaked-and-forgotten token can't grant indefinite access. Users can revoke
-// earlier from /dashboard/account/cli-sessions.
-const DEFAULT_TOKEN_TTL_DAYS = 365;
+// Default lifetime. Forces re-`envstore login` every 90 days so an accidentally
+// leaked-and-forgotten token has a bounded blast radius. The previous 365-day
+// default was friendlier on UX but oversized for a credential that grants full
+// API access — 90 days matches what most modern PAT systems do (GitHub fine-
+// grained tokens, npm tokens) and lets the per-user cap + LRU eviction recycle
+// stale tokens faster. Users can still revoke earlier from
+// /dashboard/account/cli-sessions.
+const DEFAULT_TOKEN_TTL_DAYS = 90;
 
 export function generateCliToken(): string {
   return `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`;

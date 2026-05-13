@@ -11,6 +11,7 @@
   "packageManager": "pnpm@11.0.9",
   "scripts": {
     "build": "turbo run build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

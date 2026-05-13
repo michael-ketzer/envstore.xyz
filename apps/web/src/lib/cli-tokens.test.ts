@@ -71,15 +71,15 @@ describe('issueCliToken', () => {
     expect(createArgs.data.name.length).toBe(80);
   });
 
-  test('default expiry is ~1 year from now', async () => {
+  test('default expiry is ~90 days from now', async () => {
     const before = Date.now();
     await issueCliToken({ userId: 'u_1', name: 'cli' });
     const createArgs = fakePrisma.cliToken.create.mock.calls[0]?.[0] as {
       data: { expiresAt: Date };
     };
-    const oneYear = before + 365 * 24 * 60 * 60 * 1000;
-    expect(createArgs.data.expiresAt.getTime()).toBeGreaterThan(oneYear - 10_000);
-    expect(createArgs.data.expiresAt.getTime()).toBeLessThan(oneYear + 10_000);
+    const ninetyDays = before + 90 * 24 * 60 * 60 * 1000;
+    expect(createArgs.data.expiresAt.getTime()).toBeGreaterThan(ninetyDays - 10_000);
+    expect(createArgs.data.expiresAt.getTime()).toBeLessThan(ninetyDays + 10_000);
   });
 
   test('user under cap → no revocation, just create', async () => {

@@ -50,8 +50,8 @@ approve the device.
 
 - If the browser doesn't open, paste the URL the CLI printed. The user code
   is the same either way.
-- The bearer token defaults to a 365-day expiry. Revoke any session from
-  the dashboard's "CLI sessions" page.
+- The bearer token defaults to a 90-day expiry. Revoke any session from
+  the dashboard's "CLI sessions" page; re-run `envstore login` to refresh.
 
 ### envstore logout
 

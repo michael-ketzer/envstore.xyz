@@ -271,7 +271,7 @@ export default function PrivacyPolicyPage() {
         </a>{' '}
         (X25519 + ChaCha20-Poly1305). Transport over HTTPS. CLI tokens stored
         as SHA-256 hashes. Bearer tokens scoped per user, revocable from the
-        dashboard, with a default 365-day TTL. Rate limiting on authentication
+        dashboard, with a default 90-day TTL. Rate limiting on authentication
         endpoints. Strict response headers including HSTS, X-Frame-Options,
         Referrer-Policy, and Permissions-Policy. The source code is open and
         auditable: <a href="https://github.com/michael-ketzer/envstore.xyz" target="_blank" rel="noreferrer">github.com/michael-ketzer/envstore.xyz</a>.

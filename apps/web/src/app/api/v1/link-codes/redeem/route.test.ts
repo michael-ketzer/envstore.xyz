@@ -3,8 +3,10 @@
 // Key invariants:
 //   - Rate-limit fires BEFORE auth (cheap rejection of brute-force).
 //   - User-auth only (workspace tokens cannot redeem on behalf of a user).
-//   - 404 vs 403 split: invalid/unknown code = 404; valid code but no
-//     workspace membership = 403 with an actionable message.
+//   - Both "code doesn't exist" and "code exists, you're not a member" return
+//     a uniform 404 + uniform message. Distinguishing them is a (computationally
+//     inert) info leak; we collapse them so the API can't be used to oracle
+//     code validity outside the caller's own workspaces.
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
@@ -152,15 +154,23 @@ describe('POST /link-codes/redeem', () => {
     expect((await POST(postReq('user-bearer', {}))).status).toBe(400);
   });
 
-  test('unknown code → 404 (no existence leak, no audit)', async () => {
+  test('unknown code → 404 with uniform message (no existence leak, no audit)', async () => {
     await stageUserAuth('user-bearer');
     fakeRedeem.mockResolvedValueOnce({ ok: false, reason: 'not-found', message: 'Code not found.' });
     const res = await POST(postReq('user-bearer', { code: 'GHOSTGHO' }));
     expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe(
+      'Code not found, or you are not a member of its workspace.',
+    );
     expect(fakePrisma.auditLog.create).not.toHaveBeenCalled();
   });
 
-  test('valid code but caller is not a workspace member → 403 (actionable message)', async () => {
+  test('valid code but caller is not a workspace member → also 404 with same uniform message', async () => {
+    // L4 fix: previously this returned 403 with "You are not a member of this
+    // workspace." which distinguished it from a non-existent code. The split
+    // gave an oracle for code-existence enumeration. Now both branches return
+    // 404 with the same body so the API doesn't confirm the code exists.
     await stageUserAuth('user-bearer');
     fakeRedeem.mockResolvedValueOnce({
       ok: false,
@@ -168,9 +178,11 @@ describe('POST /link-codes/redeem', () => {
       message: 'You are not a member of this workspace. Ask the owner to invite you.',
     });
     const res = await POST(postReq('user-bearer', { code: 'ABCDEFGH' }));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/not a member/i);
+    expect(body.error).toBe(
+      'Code not found, or you are not a member of its workspace.',
+    );
     expect(fakePrisma.auditLog.create).not.toHaveBeenCalled();
   });
 

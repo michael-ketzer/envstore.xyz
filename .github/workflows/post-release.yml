@@ -46,14 +46,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Required artifacts — binary + sha256 must download cleanly. NO `|| true`
+          # here so a real download failure surfaces as a workflow error rather than
+          # being masked into a confusing "file not found" downstream.
           gh release download "${{ steps.tag.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --pattern "${{ matrix.target }}" \
-            --pattern "${{ matrix.target }}.sha256" \
-            --pattern "${{ matrix.target }}.minisig" || true
+            --pattern "${{ matrix.target }}.sha256"
+          # Optional sidecar — release.yml only emits .minisig once
+          # MINISIGN_PRIVATE_KEY is configured. A separate, tolerant download keeps
+          # the rollout-friendly behavior without masking failures of the required
+          # artifacts above.
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ matrix.target }}.minisig" 2>/dev/null || true
           ls -la "${{ matrix.target }}" "${{ matrix.target }}.sha256"
-          # minisig is optional during rollout — release.yml only emits it once
-          # MINISIGN_PRIVATE_KEY is configured. Don't fail this step if absent.
           ls -la "${{ matrix.target }}.minisig" 2>/dev/null || echo "no .minisig sidecar (signing not yet enabled)"
 
       - name: Verify sha256 sidecar

@@ -138,6 +138,23 @@ export function tokenAllowsProject(auth: Authed, projectId: string): boolean {
   return scope.includes(projectId);
 }
 
+// Scope gate for mutating routes. Users always pass (a workspace member's
+// permission to mutate is enforced separately via membership role); service
+// tokens must carry the 'write' scope. Today's tokens default to
+// ["read","write"] so this is largely future-proofing for read-only tokens
+// — but the gate is here so the contract is enforced now rather than
+// retrofitted after read-only minting lands.
+export function requireWriteScope(auth: Authed): Response | null {
+  if (auth.kind !== 'workspace-token') return null;
+  if (!auth.token.scopes.includes('write')) {
+    return apiError(
+      'Service token does not have the write scope; this endpoint requires it.',
+      403,
+    );
+  }
+  return null;
+}
+
 export function unauthorized(message = 'Not authenticated.'): Response {
   return apiError(message, 401);
 }

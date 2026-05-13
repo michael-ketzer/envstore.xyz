@@ -23,6 +23,7 @@ import {
   auditFieldsFor,
   authenticateBearer,
   notFound,
+  requireWriteScope,
   resolveWorkspaceForAuth,
   tokenAllowsProject,
   unauthorized,
@@ -92,6 +93,8 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!tokenAllowsProject(auth, project.id)) {
     return apiError('Service token is not scoped to this project.', 403);
   }
+  const scopeDenied = requireWriteScope(auth);
+  if (scopeDenied) return scopeDenied;
 
   // Billing gate — writes (pushes) require 'full' access. Trial-expired,
   // canceled-past-grace, etc. workspaces are read-only or locked.

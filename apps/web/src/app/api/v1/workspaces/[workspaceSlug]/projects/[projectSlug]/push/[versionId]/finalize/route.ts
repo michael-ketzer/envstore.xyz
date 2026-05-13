@@ -15,12 +15,14 @@ import {
   auditFieldsFor,
   authenticateBearer,
   notFound,
+  requireWriteScope,
   resolveWorkspaceForAuth,
   tokenAllowsProject,
   unauthorized,
 } from '@/lib/api-auth';
 import { recordAudit } from '@/lib/audit';
 import { headObject, R2NotConfiguredError } from '@/lib/r2';
+import { pruneEnvironmentHistory } from '@/lib/version-sweep';
 
 type Ctx = {
   params: Promise<{ workspaceSlug: string; projectSlug: string; versionId: string }>;
@@ -41,13 +43,26 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!tokenAllowsProject(auth, project.id)) {
     return apiError('Service token is not scoped to this project.', 403);
   }
+  const scopeDenied = requireWriteScope(auth);
+  if (scopeDenied) return scopeDenied;
   const version = await prisma.envFileVersion.findFirst({
     where: {
       id: versionId,
       environment: { deletedAt: null, projectId: project.id },
     },
     include: {
-      environment: { select: { id: true, slug: true, project: { select: { workspaceId: true } } } },
+      environment: {
+        select: {
+          id: true,
+          slug: true,
+          project: {
+            select: {
+              workspaceId: true,
+              workspace: { select: { versionHistoryLimit: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!version) return notFound('Version not found.');
@@ -76,6 +91,29 @@ export async function POST(req: Request, ctx: Ctx) {
     data: { currentVersionId: version.id },
   });
 
+  // Inline version-history sweep — drop oldest rows + their R2 objects
+  // beyond the workspace cap. Don't let prune errors fail the push: the
+  // version IS finalized and pulls would work even if cleanup is
+  // deferred. We record any error in audit metadata for visibility.
+  const versionHistoryLimit =
+    version.environment.project.workspace.versionHistoryLimit;
+  let pruneError: string | null = null;
+  let prunedVersions = 0;
+  let prunedR2Objects = 0;
+  let r2Skipped = false;
+  try {
+    const result = await pruneEnvironmentHistory(
+      version.environment.id,
+      versionHistoryLimit,
+    );
+    prunedVersions = result.prunedVersions;
+    prunedR2Objects = result.prunedR2Objects;
+    r2Skipped = result.r2Skipped;
+  } catch (err) {
+    pruneError = (err as Error).message;
+    console.error('Version-history prune failed:', err);
+  }
+
   await recordAudit({
     workspaceId: version.environment.project.workspaceId,
     ...auditFieldsFor(auth),
@@ -87,6 +125,10 @@ export async function POST(req: Request, ctx: Ctx) {
       version: version.version,
       finalized: true,
       via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
+      ...(prunedVersions > 0
+        ? { prunedVersions, prunedR2Objects, r2Skipped }
+        : {}),
+      ...(pruneError ? { pruneError } : {}),
     },
   });
 

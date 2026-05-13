@@ -102,6 +102,17 @@ const SECTIONS: ReadonlyArray<Section> = [
     ],
   },
   {
+    title: 'Version history',
+    entries: [
+      ['versions [env]', "Show the env's version history (newest first, marks the current one)"],
+      ['versions --project <slug>', 'Pick a project in monorepo mode'],
+      ['rollback <N>', 'Make version <N> the current one for the env (next pull returns it)'],
+      ['rollback <N> --env <slug>', 'Roll a specific environment back'],
+      ['rollback <N> --project <slug>', 'Pick a project in monorepo mode'],
+      ['rollback <N> --yes', 'Skip the confirmation prompt (for CI)'],
+    ],
+  },
+  {
     title: 'Recovery / maintenance',
     entries: [
       ['rekey', "Re-encrypt every env to the workspace's current recipient set"],

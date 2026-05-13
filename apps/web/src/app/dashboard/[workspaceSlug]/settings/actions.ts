@@ -5,7 +5,12 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { prisma } from '@envstore/db';
-import { LIMITS, workspaceUpdateSchema } from '@envstore/shared';
+import {
+  LIMITS,
+  VERSION_HISTORY_LIMIT_MAX,
+  VERSION_HISTORY_LIMIT_MIN,
+  workspaceUpdateSchema,
+} from '@envstore/shared';
 
 import { recordAudit } from '@/lib/audit';
 import { requireSession } from '@/lib/auth-helpers';
@@ -14,8 +19,14 @@ import { getWorkspaceMembershipWithRole } from '@/lib/workspace-roles';
 export type SettingsState = { error: string | null; ok: boolean };
 
 const updateFormSchema = workspaceUpdateSchema.extend({
-  // Form fields arrive as strings; coerce retentionDays back to number.
+  // Form fields arrive as strings; coerce numeric ones back to numbers.
   softDeleteRetentionDays: z.coerce.number().int().min(0).max(365).optional(),
+  versionHistoryLimit: z
+    .coerce.number()
+    .int()
+    .min(VERSION_HISTORY_LIMIT_MIN)
+    .max(VERSION_HISTORY_LIMIT_MAX)
+    .optional(),
 });
 
 export async function updateWorkspaceAction(
@@ -38,6 +49,10 @@ export async function updateWorkspaceAction(
       formData.get('softDeleteRetentionDays') !== null
         ? formData.get('softDeleteRetentionDays')
         : undefined,
+    versionHistoryLimit:
+      formData.get('versionHistoryLimit') !== null
+        ? formData.get('versionHistoryLimit')
+        : undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
@@ -48,6 +63,9 @@ export async function updateWorkspaceAction(
   if (parsed.data.description !== undefined) data.description = parsed.data.description;
   if (parsed.data.softDeleteRetentionDays !== undefined) {
     data.softDeleteRetentionDays = parsed.data.softDeleteRetentionDays;
+  }
+  if (parsed.data.versionHistoryLimit !== undefined) {
+    data.versionHistoryLimit = parsed.data.versionHistoryLimit;
   }
   if (Object.keys(data).length === 0) return { ok: true, error: null };
 

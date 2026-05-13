@@ -22,11 +22,13 @@ import { ls } from './commands/ls';
 import { pull } from './commands/pull';
 import { push } from './commands/push';
 import { rekey } from './commands/rekey';
+import { rollback } from './commands/rollback';
 import { scan } from './commands/scan';
 import { set } from './commands/set';
 import { sync } from './commands/sync';
 import { token } from './commands/token';
 import { trust } from './commands/trust';
+import { versions } from './commands/versions';
 import { whoami } from './commands/whoami';
 
 type Handler = (args: Args) => Promise<void>;
@@ -47,9 +49,11 @@ const COMMANDS: Record<string, Handler> = {
   scan,
   genexample,
   rekey,
+  rollback,
   sync,
   token,
   trust,
+  versions,
   licenses,
   help,
 };

@@ -1,0 +1,189 @@
+// POST /api/v1/workspaces/[ws]/projects/[proj]/environments/[env]/current
+//
+// Body: { versionId } OR { version }.  Atomically flips
+// Environment.currentVersionId to the named version, making future pulls
+// return it. This is the "rollback" operation surfaced by the CLI's
+// `envstore rollback` command and the dashboard's history drawer.
+//
+// Auth: workspace member OR workspace-scoped service token whose project
+// allowlist covers this project. Service tokens CAN roll back (it's a
+// CI-relevant operation), but billing-write access is required —
+// rollback is a write at the audit-log level and changes the env's
+// effective state.
+
+import { prisma } from '@envstore/db';
+import {
+  environmentSlugSchema,
+  versionRollbackSchema,
+} from '@envstore/shared';
+
+import {
+  apiError,
+  auditFieldsFor,
+  authenticateBearer,
+  notFound,
+  requireWriteScope,
+  resolveWorkspaceForAuth,
+  tokenAllowsProject,
+  unauthorized,
+} from '@/lib/api-auth';
+import {
+  WorkspaceAccessDeniedError,
+  requireWorkspaceWrite,
+} from '@/lib/billing';
+
+type Ctx = {
+  params: Promise<{
+    workspaceSlug: string;
+    projectSlug: string;
+    envSlug: string;
+  }>;
+};
+
+export async function POST(req: Request, ctx: Ctx) {
+  const auth = await authenticateBearer(req);
+  if (!auth) return unauthorized();
+  const { workspaceSlug, projectSlug, envSlug } = await ctx.params;
+
+  const slugCheck = environmentSlugSchema.safeParse(envSlug);
+  if (!slugCheck.success) {
+    return apiError(slugCheck.error.issues[0]?.message ?? 'Invalid env slug.', 400);
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return apiError('Invalid JSON body.', 400);
+  }
+  const parsed = versionRollbackSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? 'Invalid body.', 400);
+  }
+
+  const ws = await resolveWorkspaceForAuth(auth, workspaceSlug);
+  if (!ws) return notFound('Workspace not found.');
+
+  const project = await prisma.project.findFirst({
+    where: { workspaceId: ws.id, slug: projectSlug, deletedAt: null },
+    select: {
+      id: true,
+      workspaceId: true,
+      workspace: {
+        select: {
+          type: true,
+          subscription: {
+            select: {
+              status: true,
+              trialEndsAt: true,
+              canceledAt: true,
+              paddleSubscriptionId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!project) return notFound('Project not found.');
+  if (!tokenAllowsProject(auth, project.id)) {
+    return apiError('Service token is not scoped to this project.', 403);
+  }
+  const scopeDenied = requireWriteScope(auth);
+  if (scopeDenied) return scopeDenied;
+
+  try {
+    requireWorkspaceWrite(project.workspace);
+  } catch (err) {
+    if (err instanceof WorkspaceAccessDeniedError) {
+      return apiError(err.access.message, 402, 'Open billing in the dashboard to resubscribe.');
+    }
+    throw err;
+  }
+
+  const environment = await prisma.environment.findFirst({
+    where: { projectId: project.id, slug: envSlug, deletedAt: null },
+    select: { id: true, slug: true, currentVersionId: true },
+  });
+  if (!environment) return notFound('Environment not found.');
+
+  // Resolve the target version. Schema-level refine guarantees exactly
+  // one of {versionId, version} is present; both lookups scope to THIS
+  // environment so a cross-env id (or a version number that exists in a
+  // different env with the same int) can't be hit.
+  const target = parsed.data.versionId
+    ? await prisma.envFileVersion.findFirst({
+        where: { id: parsed.data.versionId, environmentId: environment.id },
+        select: { id: true, version: true },
+      })
+    : await prisma.envFileVersion.findUnique({
+        where: {
+          environmentId_version: {
+            environmentId: environment.id,
+            version: parsed.data.version!,
+          },
+        },
+        select: { id: true, version: true },
+      });
+  if (!target) return notFound('Version not found.');
+
+  // Cheap no-op short-circuit using the outer-tx read. Saves a transaction
+  // round-trip in the common case. The transaction below re-checks under
+  // a lock — see the compare-and-swap below.
+  if (environment.currentVersionId === target.id) {
+    return Response.json({
+      ok: true,
+      noop: true,
+      versionId: target.id,
+      version: target.version,
+      environmentSlug: environment.slug,
+    });
+  }
+
+  // Compare-and-swap the pointer inside one transaction. We re-read
+  // currentVersionId under the tx (so the audit's `previousVersionId`
+  // reflects the value we actually replaced — not a stale snapshot from
+  // outside the tx) and use updateMany with both `id` AND
+  // `currentVersionId` in the where clause. If another rollback wins
+  // the race in between, our updateMany affects 0 rows and we treat
+  // this call as a no-op rather than emitting an audit for a change we
+  // didn't make.
+  const result = await prisma.$transaction(async (tx) => {
+    const fresh = await tx.environment.findUnique({
+      where: { id: environment.id },
+      select: { currentVersionId: true, slug: true },
+    });
+    if (!fresh) return { changed: false } as const;
+    if (fresh.currentVersionId === target.id) return { changed: false } as const;
+
+    const updated = await tx.environment.updateMany({
+      where: { id: environment.id, currentVersionId: fresh.currentVersionId },
+      data: { currentVersionId: target.id },
+    });
+    if (updated.count === 0) return { changed: false } as const;
+
+    await tx.auditLog.create({
+      data: {
+        workspaceId: project.workspaceId,
+        ...auditFieldsFor(auth),
+        action: 'environment.update',
+        resourceType: 'environment',
+        resourceId: environment.id,
+        metadata: {
+          env: fresh.slug,
+          rolledBackTo: target.version,
+          previousVersionId: fresh.currentVersionId ?? null,
+          via: auth.kind === 'workspace-token' ? 'workspace-token' : 'cli',
+        },
+      },
+    });
+    return { changed: true } as const;
+  });
+
+  return Response.json({
+    ok: true,
+    noop: !result.changed,
+    versionId: target.id,
+    version: target.version,
+    environmentSlug: environment.slug,
+  });
+}

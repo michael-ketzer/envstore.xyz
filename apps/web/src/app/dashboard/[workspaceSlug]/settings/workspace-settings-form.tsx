@@ -3,7 +3,11 @@
 import { useActionState } from 'react';
 
 import { Button, Input, Label } from '@envstore/ui';
-import { LIMITS } from '@envstore/shared';
+import {
+  LIMITS,
+  VERSION_HISTORY_LIMIT_MAX,
+  VERSION_HISTORY_LIMIT_MIN,
+} from '@envstore/shared';
 
 import { updateWorkspaceAction, type SettingsState } from './actions';
 
@@ -14,11 +18,13 @@ export function WorkspaceSettingsForm({
   defaultName,
   defaultDescription,
   defaultRetention,
+  defaultVersionHistoryLimit,
 }: {
   workspaceSlug: string;
   defaultName: string;
   defaultDescription: string;
   defaultRetention: number;
+  defaultVersionHistoryLimit: number;
 }) {
   const boundAction = updateWorkspaceAction.bind(null, workspaceSlug);
   const [state, action, pending] = useActionState(boundAction, initial);
@@ -62,6 +68,25 @@ export function WorkspaceSettingsForm({
           When a project or environment is deleted, its data is recoverable for this many days
           before permanent removal. Set to <code className="font-mono">0</code> to delete
           immediately.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="versionHistoryLimit">Version history per environment</Label>
+        <Input
+          id="versionHistoryLimit"
+          name="versionHistoryLimit"
+          type="number"
+          min={VERSION_HISTORY_LIMIT_MIN}
+          max={VERSION_HISTORY_LIMIT_MAX}
+          step={1}
+          defaultValue={defaultVersionHistoryLimit}
+        />
+        <p className="text-xs text-muted-foreground">
+          How many past versions to keep per environment. Older versions
+          (and their encrypted blobs in storage) are pruned on the next
+          successful push. The current version is always preserved.
+          Range: {VERSION_HISTORY_LIMIT_MIN}–{VERSION_HISTORY_LIMIT_MAX}.
         </p>
       </div>
 

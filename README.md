@@ -127,7 +127,7 @@ under [Roadmap](#roadmap).
 - [x] Setup codes for one-command project linking
 - [x] Rate limiting on auth endpoints, security headers, 90-day CLI token TTL
 - [x] Paddle billing integration (checkout, webhook, trial enforcement)
-- [ ] Version history + rollback UI; `envstore versions` / `envstore rollback`
+- [x] Version history + rollback UI; `envstore versions` / `envstore rollback`
 - [x] `envstore rekey` — re-encrypt to current recipient set
 - [x] Background cron for soft-delete cleanup
 - [x] Automated tests

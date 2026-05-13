@@ -1,5 +1,5 @@
-import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 // XDG Base Directory paths, scoped to envstore.
 export function configDir(): string {
@@ -46,4 +46,4 @@ export function identityFile(): string {
   return join(configDir(), 'identity.age');
 }
 
-export const CLI_VERSION = '0.8.4';
+export const CLI_VERSION = '0.8.5';

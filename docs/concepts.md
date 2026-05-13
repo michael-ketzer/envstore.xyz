@@ -45,9 +45,17 @@ integer per environment, an R2 object key for the ciphertext, the size and
 sha-256 of that ciphertext, the recipients hash it was encrypted to, and an
 optional comment.
 
-The environment's `currentVersion` pointer moves on each push. Historical
-versions are kept (no automatic rollover today) and can be pulled with
-`envstore pull <env> --version <n>`.
+The environment's `currentVersion` pointer is what `envstore pull` returns.
+It moves forward on every push, and can be moved to any retained prior
+version with [`envstore rollback`](commands.md#envstore-rollback) — the
+rollback is just a pointer flip, no re-encryption. List the history with
+[`envstore versions`](commands.md#envstore-versions); pull a specific
+historical version with `envstore pull <env> --version <n>`.
+
+Each workspace has a `versionHistoryLimit` (default 50, configurable
+5–500 in workspace settings). After every push, versions older than the cap
+are pruned in the same transaction; the current pointer is always preserved
+even if it falls outside the cap.
 
 ## Recipient
 

@@ -24,6 +24,8 @@ is for going deeper.
 | Push your `.env`                      | [`envstore push`](commands.md#envstore-push)                                                 |
 | Pull on a new machine / CI            | [`envstore pull`](commands.md#envstore-pull)                                                 |
 | Read or change a single var           | [`envstore get`](commands.md#envstore-get) / [`envstore set`](commands.md#envstore-set)      |
+| See an env's version history          | [`envstore versions`](commands.md#envstore-versions)                                         |
+| Roll back to a previous version       | [`envstore rollback`](commands.md#envstore-rollback)                                         |
 | Generate a `.env.example`             | [`envstore genexample`](commands.md#envstore-genexample)                                     |
 | Check for accidentally tracked `.env` | [`envstore scan`](commands.md#envstore-scan)                                                 |
 | Add a teammate / rotate recipients    | [`envstore rekey`](commands.md#envstore-rekey)                                               |

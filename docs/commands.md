@@ -441,6 +441,95 @@ envstore genexample --stdout | grep -v INTERNAL_
 
 ---
 
+## Version history
+
+Every push appends a new immutable version to its environment, and each
+environment carries a **current** pointer — that's what `envstore pull`
+returns. The pointer moves forward on every push and can be moved to any
+retained prior version with `rollback`. List the history with `versions`.
+
+Each workspace has a **`versionHistoryLimit`** (default 50, configurable
+5–500 in workspace settings). After every push, versions older than the cap
+are pruned in the same transaction. The current pointer is always preserved
+even if it falls outside the cap (e.g. after rolling back to an ancient
+version), so a rollback target won't be pruned out from under you.
+
+### envstore versions
+
+List the version history for an environment, newest first. Marks the
+version `envstore pull` would return today.
+
+```
+envstore versions [env]                  # default env: defaultEnv or development
+envstore versions --env <slug>           # alternative to positional
+envstore versions --project <slug>       # required in monorepo mode
+```
+
+| Flag               | Purpose                            |
+| ------------------ | ---------------------------------- |
+| `--env <slug>`     | Override the default environment.  |
+| `--project <slug>` | Required in monorepo mode.         |
+
+Output columns: version number, ciphertext size, push time, who pushed,
+optional comment. The current version is marked with `●`. The header line
+shows `<retained> retained · workspace cap: <limit>` so you know where you
+sit relative to the prune threshold.
+
+**Examples**
+
+```sh
+envstore versions                        # default env
+envstore versions production
+envstore versions --project api --env staging
+```
+
+### envstore rollback
+
+Make a prior version the **current** one for an environment. Rollback is
+just a pointer flip — no new version is created, no data is copied, no
+re-encryption happens. Cost is O(1).
+
+```
+envstore rollback <N>                    # roll defaultEnv (or development) to vN
+envstore rollback <N> --env <slug>       # specific environment
+envstore rollback <N> --project <slug>   # required in monorepo mode
+envstore rollback <N> --yes              # skip the confirmation prompt (CI)
+```
+
+| Flag               | Purpose                                                                 |
+| ------------------ | ----------------------------------------------------------------------- |
+| `--env <slug>`     | Target environment.                                                     |
+| `--project <slug>` | Required in monorepo mode.                                              |
+| `--yes`            | Skip the interactive confirmation. Required in non-interactive CI runs. |
+
+**Examples**
+
+```sh
+# Roll the default env back to v12 (interactive — confirms first)
+envstore rollback 12
+
+# Roll production back to v7 in CI
+envstore rollback 7 --env production --yes
+```
+
+**Gotchas**
+
+- Reversible: another `rollback` flips it back. Nothing is destroyed by
+  the operation itself.
+- The next push from anyone in the workspace continues from the highest
+  existing version number, not from the current pointer. So after rolling
+  back from v20 to v12, the next push becomes v21 — and `currentVersion`
+  jumps to v21 unless someone rolls back again.
+- Pruned versions can't be rolled back to. If the workspace has shrunk its
+  `versionHistoryLimit` and your target was pruned, it's gone — run
+  `envstore versions` first to confirm the version is still retained.
+- Same identity requirement as `pull`: rollback only flips a pointer
+  server-side, but the version you're rolling to must still be decryptable
+  by your local identity (i.e. you must be in its recipient set) for the
+  next `pull` to succeed.
+
+---
+
 ## Maintenance
 
 ### envstore rekey

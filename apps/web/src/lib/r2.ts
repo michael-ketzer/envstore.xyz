@@ -104,25 +104,24 @@ export async function presignPut(
     throw new Error('presigned PUT requires a 64-char lowercase hex sha256');
   }
 
-  // Bind the upload to the SHA-256 the CLI announced at init.
+  // We sign ContentType + ContentLength so R2 enforces both at upload time.
   //
-  // R2 honors S3's `x-amz-checksum-sha256` flow: when ChecksumSHA256 is
-  // set on the signed PutObjectCommand, the client MUST send a matching
-  // `x-amz-checksum-sha256` header AND R2 recomputes the digest of the
-  // received body and rejects the upload if it doesn't match. That closes
-  // the previous gap where the CLI could announce one sha256 to the
-  // server, store it on the version row, but upload arbitrary bytes of
-  // the same length to R2 — the mismatch only surfaced when a teammate
-  // later tried to decrypt.
+  // We do NOT bind ChecksumSHA256 here even though the CLI announces one.
+  // Reason: @aws-sdk/s3-request-presigner silently drops ChecksumSHA256
+  // from the presigned URL — it's neither added to X-Amz-SignedHeaders nor
+  // hoisted to the query string. Sending `x-amz-checksum-sha256` as an
+  // unsigned header on the PUT made R2 return SignatureDoesNotMatch.
   //
-  // ContentLength is also signed, so the size is enforced too.
-  const sha256Base64 = Buffer.from(opts.sha256Hex, 'hex').toString('base64');
+  // Integrity of the stored object is still verified end-to-end: the
+  // sha256 is recorded on EnvFileVersion at init time and every reader
+  // (pull / get / set / rekey) compares it against the bytes it
+  // downloaded. age's AEAD construction adds a third independent check on
+  // decryption.
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
     ContentType: CIPHERTEXT_CONTENT_TYPE,
     ContentLength: opts.sizeBytes,
-    ChecksumSHA256: sha256Base64,
   });
   const url = await getSignedUrl(client(), command, {
     expiresIn: opts.expiresIn ?? DEFAULT_PUT_EXPIRY,
@@ -132,7 +131,6 @@ export async function presignPut(
     requiredHeaders: {
       'content-type': CIPHERTEXT_CONTENT_TYPE,
       'content-length': String(opts.sizeBytes),
-      'x-amz-checksum-sha256': sha256Base64,
     },
     expiresIn: opts.expiresIn ?? DEFAULT_PUT_EXPIRY,
   };

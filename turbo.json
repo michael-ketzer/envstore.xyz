@@ -8,6 +8,12 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**", "bin/**"],
       "env": [
+        "OPENBAO_URL",
+        "OPENBAO_TRANSIT_MOUNT",
+        "OPENBAO_RUNTIME_TOKEN",
+        "OPENBAO_ADMIN_TOKEN",
+        "OPENBAO_BACKUP_TOKEN",
+        "MANAGED_KEYS_TRUST_PROXY",
         "DATABASE_URL",
         "DIRECT_URL",
         "AUTH_SECRET",
@@ -39,7 +45,8 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["OPENBAO_*", "MANAGED_KEYS_TRUST_PROXY"]
     },
     "lint": {
       "dependsOn": ["^lint"]

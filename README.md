@@ -7,6 +7,11 @@
 only. Encryption happens on your machine with keys that never leave it.
 $1.99/month per workspace. Unlimited team members.
 
+An optional [managed-key API](docs/managed-keys.md) provides backend applications
+with data keys through OpenBao Transit. That service trusts envstore with
+decryption authority; the zero-knowledge guarantee applies to age-encrypted
+`.env` storage only.
+
 ## Why
 
 Vercel's [April 2026 security incident](https://vercel.com/kb/bulletin/vercel-april-2026-security-incident)

@@ -45,12 +45,19 @@ release notes. Just tell us.
 
 ## Threat model
 
+The following zero-knowledge model covers recipient-based `.env` storage.
+The optional [managed-key API](docs/managed-keys.md) has a different trust model:
+envstore and OpenBao can unwrap application data keys. Compromise of that service
+or an authorized application credential can expose the corresponding application
+data. Managed-key authorization, isolation, and `/v1/keys/*` endpoints are also
+in scope for security reports.
+
 We assume:
 
 - The server (Next.js app + Postgres + R2) can be fully compromised. An
   attacker with database + R2 access cannot decrypt existing env files. An
   attacker with active control of the API can attempt to widen the audience
-  of *future* pushes by injecting a recipient into the `/recipients`
+  of _future_ pushes by injecting a recipient into the `/recipients`
   response — the CLI defends against this with a local trust cache that
   surfaces unfamiliar recipients before encryption (see "What we already
   do").

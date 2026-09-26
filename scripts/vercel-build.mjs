@@ -38,9 +38,11 @@ function run(cmd, args) {
 
 const vercelEnv = process.env.VERCEL_ENV;
 
+run('pnpm', ['db:generate']);
+
 if (vercelEnv === 'production') {
   console.log('[vercel-build] VERCEL_ENV=production — applying pending Prisma migrations.');
-  run('pnpm', ['db:migrate:deploy']);
+  run('pnpm', ['--filter', '@envstore/db', 'migrate:deploy']);
 } else {
   console.log(
     `[vercel-build] VERCEL_ENV=${vercelEnv ?? '(unset)'} — skipping migrations. ` +
@@ -49,5 +51,5 @@ if (vercelEnv === 'production') {
   );
 }
 
-console.log('[vercel-build] Running turbo build.');
-run('pnpm', ['build']);
+console.log('[vercel-build] Building the web application.');
+run('pnpm', ['--filter', '@envstore/web', 'build']);

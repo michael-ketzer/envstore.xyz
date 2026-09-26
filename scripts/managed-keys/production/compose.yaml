@@ -1,0 +1,39 @@
+name: envstore-openbao
+services:
+  openbao:
+    image: openbao/openbao:2.7.0@sha256:71156a1c6623a5fa3f5e61b0c6a8ead0faf0df29a778339188443551995d1315
+    container_name: envstore-openbao
+    command: ['server', '-config=/openbao/config/openbao.hcl']
+    user: '100:1000'
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    ports: ['127.0.0.1:18200:8200']
+    volumes:
+      - ./openbao.hcl:/openbao/config/openbao.hcl:ro
+      - /var/lib/envstore-openbao/data:/openbao/data
+      - /var/log/envstore-openbao:/openbao/logs
+      - type: bind
+        source: /run/envstore-openbao/seal.key
+        target: /openbao/secrets/seal.key
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    healthcheck:
+      test: ['CMD', 'bao', 'status']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: '10m'
+        max-file: '3'

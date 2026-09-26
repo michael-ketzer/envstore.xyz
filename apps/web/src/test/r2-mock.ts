@@ -24,6 +24,7 @@ type MockFn = (...args: unknown[]) => unknown;
 export type R2MockOverrides = Partial<{
   presignGet: MockFn;
   presignPut: MockFn;
+  presignManagedKeyBackup: MockFn;
   headObject: MockFn;
   deleteObjects: MockFn;
   buildVersionKey: (opts: {
@@ -39,16 +40,12 @@ export function makeR2Mock(overrides: R2MockOverrides = {}): Record<string, unkn
   return {
     presignGet: overrides.presignGet ?? noop,
     presignPut: overrides.presignPut ?? noop,
+    presignManagedKeyBackup: overrides.presignManagedKeyBackup ?? noop,
     headObject: overrides.headObject ?? noop,
     deleteObjects: overrides.deleteObjects ?? noop,
     buildVersionKey:
       overrides.buildVersionKey ??
-      ((opts: {
-        workspaceId: string;
-        projectId: string;
-        environmentId: string;
-        version: number;
-      }) =>
+      ((opts: { workspaceId: string; projectId: string; environmentId: string; version: number }) =>
         `workspaces/${opts.workspaceId}/projects/${opts.projectId}/environments/${opts.environmentId}/versions/v${opts.version}`),
     R2NotConfiguredError: FakeR2NotConfigured,
   };

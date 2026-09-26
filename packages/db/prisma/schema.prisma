@@ -157,6 +157,9 @@ model Workspace {
   tokens        WorkspaceToken[]
   subscription  Subscription?
   auditLogs     AuditLog[]
+  managedKeys           ManagedKey[]
+  managedKeyCredentials ManagedKeyCredential[]
+  managedKeyAuditEvents ManagedKeyAuditEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -486,4 +489,67 @@ model PaddleWebhookEvent {
   processedAt DateTime?
 
   @@index([eventType, receivedAt])
+}
+
+// Managed keys are a separate, server-trusted service. Only metadata lives
+// here; wrapping keys and their version history live in OpenBao Transit.
+model ManagedKey {
+  id            String            @id @default(uuid())
+  workspaceId   String
+  tenantId      String
+  environment   String
+  name          String
+  purpose       String
+  provisionedAt DateTime?
+  disabledAt    DateTime?
+  createdAt     DateTime          @default(now())
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  grants        ManagedKeyGrant[]
+
+  @@unique([workspaceId, tenantId, environment, name])
+}
+
+model ManagedKeyCredential {
+  id              String            @id @default(uuid())
+  workspaceId     String
+  applicationId   String
+  tenantId        String
+  environment     String
+  tokenHash       String            @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdByUserId String
+  createdAt       DateTime          @default(now())
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  grants          ManagedKeyGrant[]
+
+  @@index([workspaceId, createdAt])
+}
+
+model ManagedKeyGrant {
+  credentialId String
+  keyId        String
+  operations   String[]
+  credential   ManagedKeyCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  key          ManagedKey           @relation(fields: [keyId], references: [id], onDelete: Restrict)
+
+  @@id([credentialId, keyId])
+  @@index([keyId])
+}
+
+// Deliberately no free-form metadata, context, request body, or key material.
+// Actor IDs survive revocation/offboarding. Unknown callers have null IDs.
+model ManagedKeyAuditEvent {
+  id                 String     @id @default(uuid())
+  workspaceId        String?
+  userId             String?
+  credentialId       String?
+  targetCredentialId String?
+  keyId              String?
+  operation          String
+  outcome            String
+  createdAt          DateTime   @default(now())
+  workspace          Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt, id])
 }

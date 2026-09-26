@@ -11,6 +11,7 @@ export type EnvMockOverrides = Partial<{
 }>;
 
 const DEFAULT_FEATURES = {
+  managedKeys: false,
   githubAuth: false,
   googleAuth: false,
   emailOtp: false,

@@ -3,29 +3,36 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Privacy Policy — envstore',
   description:
-    'How envstore handles your data. Short version: the server stores ciphertext, never plaintext. You hold the keys.',
+    'How envstore handles your data. Recipient-based .env storage holds ciphertext only. Optional managed keys have a separate trust model.',
 };
 
 export default function PrivacyPolicyPage() {
   return (
     <>
       <h1>Privacy Policy</h1>
-      <p className="lede">Last updated: 11 May 2026</p>
+      <p className="lede">Last updated: 26 September 2026</p>
 
       <h2>The 30-second version</h2>
       <p>
-        envstore is a zero-knowledge service. Your <code>.env</code> files are
-        encrypted on your machine before they ever reach us. We store
-        ciphertext, public keys, and the metadata required to bill you and
-        operate the service. We never see plaintext secrets, never hold your
-        private keys, and could not decrypt your data even if compelled.
+        envstore’s recipient-based .env storage is a zero-knowledge service. Your <code>.env</code>{' '}
+        files are encrypted on your machine before they ever reach us. We store ciphertext, public
+        keys, and the metadata required to bill you and operate the service. We never see plaintext
+        secrets, never hold your private keys, and could not decrypt those files even if compelled.
+      </p>
+
+      <p>
+        The optional managed-key API has a separate trust model. It processes transient plaintext
+        data keys and uses OpenBao Transit to wrap and unwrap them for authorized applications.
+        Envstore has decryption authority in this mode. Application content stays with the
+        application; managed-key audit records contain caller IDs, key IDs, operations, times, and
+        outcomes. The zero-knowledge guarantees on this page apply to recipient-based{' '}
+        <code>.env</code> storage.
       </p>
 
       <h2>Who's responsible</h2>
       <p>
-        The data controller (in GDPR terms) is{' '}
-        <strong>Michael Ketzer</strong>, a sole operator based in Germany
-        trading as envstore (full operator address in our{' '}
+        The data controller (in GDPR terms) is <strong>Michael Ketzer</strong>, a sole operator
+        based in Germany trading as envstore (full operator address in our{' '}
         <a href="/imprint">Imprint</a>). Reach us at{' '}
         <a href="mailto:privacy@envstore.xyz">privacy@envstore.xyz</a>.
       </p>
@@ -35,16 +42,15 @@ export default function PrivacyPolicyPage() {
       <h3>Account data</h3>
       <ul>
         <li>
-          <strong>Email address</strong>: required to sign in and contact you
-          about your account.
+          <strong>Email address</strong>: required to sign in and contact you about your account.
         </li>
         <li>
-          <strong>Name and avatar</strong>: optional, populated by your OAuth
-          provider (GitHub or Google) if you sign in with one.
+          <strong>Name and avatar</strong>: optional, populated by your OAuth provider (GitHub or
+          Google) if you sign in with one.
         </li>
         <li>
-          <strong>Provider account ID</strong>: from GitHub or Google, used to
-          recognise you across sign-ins.
+          <strong>Provider account ID</strong>: from GitHub or Google, used to recognise you across
+          sign-ins.
         </li>
       </ul>
 
@@ -53,49 +59,40 @@ export default function PrivacyPolicyPage() {
         <li>Workspace, project, and environment names and slugs you create</li>
         <li>Membership and role information</li>
         <li>
-          Encrypted env file ciphertext — opaque bytes that only your local
-          private key can read
+          Encrypted env file ciphertext — opaque bytes that only your local private key can read
         </li>
         <li>Ciphertext metadata: size, SHA-256 checksum, version number, timestamps</li>
       </ul>
 
       <h3>Public encryption keys</h3>
       <p>
-        Your age public recipient (e.g. <code>age1...</code>) is stored so other
-        members can encrypt to you. Private keys never leave your machine.
+        Your age public recipient (e.g. <code>age1...</code>) is stored so other members can encrypt
+        to you. Private keys never leave your machine.
       </p>
 
       <h3>Authentication tokens</h3>
       <ul>
-        <li>
-          Browser session cookies (signed JWT) issued by our authentication
-          system
-        </li>
-        <li>
-          CLI tokens (stored hashed via SHA-256 — we cannot recover the
-          plaintext)
-        </li>
+        <li>Browser session cookies (signed JWT) issued by our authentication system</li>
+        <li>CLI tokens (stored hashed via SHA-256 — we cannot recover the plaintext)</li>
       </ul>
 
       <h3>Operational logs</h3>
       <ul>
         <li>
-          Audit log of mutating actions (who did what, when) for security and
-          debugging. Rows record the actor (user or workspace service token),
-          the action, the resource it touched, and the timestamp.{' '}
+          Audit log of mutating actions (who did what, when) for security and debugging. Rows record
+          the actor (user or workspace service token), the action, the resource it touched, and the
+          timestamp.{' '}
           <strong>
-            We deliberately do not store IP addresses or User-Agent strings on
-            audit-log rows
+            We deliberately do not store IP addresses or User-Agent strings on audit-log rows
           </strong>{' '}
-          — both are personal data under GDPR, and the audit log doesn't need
-          them to answer its core question.
+          — both are personal data under GDPR, and the audit log doesn't need them to answer its
+          core question.
         </li>
         <li>
-          For the short-lived CLI device-grant flow (the in-browser
-          confirmation step of <code>envstore login</code>), we briefly store
-          the requesting IP so you can verify "yes, this is my machine" on the
-          approval page. That row is deleted as soon as the device-grant flow
-          completes or expires (≤10 minutes).
+          For the short-lived CLI device-grant flow (the in-browser confirmation step of{' '}
+          <code>envstore login</code>), we briefly store the requesting IP so you can verify "yes,
+          this is my machine" on the approval page. That row is deleted as soon as the device-grant
+          flow completes or expires (≤10 minutes).
         </li>
       </ul>
 
@@ -105,15 +102,11 @@ export default function PrivacyPolicyPage() {
         <a href="https://www.paddle.com/" target="_blank" rel="noreferrer">
           Paddle
         </a>
-        , which acts as the merchant of record. Paddle collects the data
-        required to process payment (name, billing address, card details, tax
-        ID where applicable). We receive only a subscription identifier and
-        status from Paddle — we never see your full card number or CVC. See{' '}
-        <a
-          href="https://www.paddle.com/legal/privacy"
-          target="_blank"
-          rel="noreferrer"
-        >
+        , which acts as the merchant of record. Paddle collects the data required to process payment
+        (name, billing address, card details, tax ID where applicable). We receive only a
+        subscription identifier and status from Paddle — we never see your full card number or CVC.
+        See{' '}
+        <a href="https://www.paddle.com/legal/privacy" target="_blank" rel="noreferrer">
           Paddle's privacy notice
         </a>{' '}
         for details.
@@ -122,13 +115,12 @@ export default function PrivacyPolicyPage() {
       <h2>What we do NOT collect</h2>
       <ul>
         <li>
-          <strong>Plaintext env file contents.</strong> Encryption happens
-          locally. Ciphertext that reaches us is bound to your recipient(s)'
-          public keys — we cannot decrypt it.
+          <strong>Plaintext env file contents.</strong> Encryption happens locally. Ciphertext that
+          reaches us is bound to your recipient(s)' public keys — we cannot decrypt it.
         </li>
         <li>
-          <strong>Your age private key.</strong> It lives on your machine, in
-          your OS keychain by default.
+          <strong>Your age private key.</strong> It lives on your machine, in your OS keychain by
+          default.
         </li>
         <li>
           <strong>Payment card details.</strong> Paddle handles these.
@@ -138,22 +130,16 @@ export default function PrivacyPolicyPage() {
       <h2>How we use your data</h2>
       <ul>
         <li>To provide the service you signed up for (Art. 6(1)(b) GDPR — contract)</li>
+        <li>To bill you for paid workspaces (Art. 6(1)(b) — contract; handled via Paddle)</li>
         <li>
-          To bill you for paid workspaces (Art. 6(1)(b) — contract; handled via
-          Paddle)
+          To secure the service against abuse — rate limiting, audit logging, security
+          investigations (Art. 6(1)(f) — legitimate interest)
         </li>
-        <li>
-          To secure the service against abuse — rate limiting, audit logging,
-          security investigations (Art. 6(1)(f) — legitimate interest)
-        </li>
-        <li>
-          To send service emails (sign-in codes, invites, billing receipts —
-          Art. 6(1)(b))
-        </li>
+        <li>To send service emails (sign-in codes, invites, billing receipts — Art. 6(1)(b))</li>
       </ul>
       <p>
-        We do not use your data for advertising, do not sell it, and do not
-        share it with third parties beyond the processors listed below.
+        We do not use your data for advertising, do not sell it, and do not share it with third
+        parties beyond the processors listed below.
       </p>
 
       <h2>Subprocessors</h2>
@@ -165,11 +151,7 @@ export default function PrivacyPolicyPage() {
           (Postgres database hosting)
         </li>
         <li>
-          <a
-            href="https://www.cloudflare.com/products/r2/"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a href="https://www.cloudflare.com/products/r2/" target="_blank" rel="noreferrer">
             Cloudflare R2
           </a>{' '}
           (encrypted ciphertext storage)
@@ -207,33 +189,33 @@ export default function PrivacyPolicyPage() {
 
       <h2>Data location</h2>
       <p>
-        Neon and Vercel infrastructure is selected at deployment time. R2
-        objects are stored in the bucket region the operator configured (the
-        EU jurisdiction is supported for EU-resident customers). Email is sent
-        through Resend, which operates globally.
+        Neon and Vercel infrastructure is selected at deployment time. R2 objects are stored in the
+        bucket region the operator configured (the EU jurisdiction is supported for EU-resident
+        customers). Email is sent through Resend, which operates globally.
       </p>
 
       <h2>Retention</h2>
       <ul>
         <li>
-          Account data: kept as long as your account is active. Deletion on
-          request removes it within 30 days.
+          Account data: kept as long as your account is active. Deletion on request removes it
+          within 30 days.
         </li>
         <li>
-          Environment ciphertext: kept until you delete the project / environment.
-          Soft-deleted resources are hard-deleted by an automated daily sweep
-          after the workspace's configured retention window (default 30 days),
-          including the matching object-storage entries.
+          Environment ciphertext: kept until you delete the project / environment. Soft-deleted
+          resources are hard-deleted by an automated daily sweep after the workspace's configured
+          retention window (default 30 days), including the matching object-storage entries.
         </li>
         <li>
-          Audit logs: 12 months, then aggregated or deleted. No IP addresses or
-          User-Agent strings are stored on these rows.
+          Audit logs: 12 months, then aggregated or deleted. No IP addresses or User-Agent strings
+          are stored on these rows.
         </li>
         <li>
-          CLI device-grant approval rows: ≤10 minutes (deleted as soon as the
-          flow completes or expires).
+          CLI device-grant approval rows: ≤10 minutes (deleted as soon as the flow completes or
+          expires).
         </li>
-        <li>Billing records: retained as long as required by tax law (typically 10 years in the EU).</li>
+        <li>
+          Billing records: retained as long as required by tax law (typically 10 years in the EU).
+        </li>
       </ul>
 
       <h2>Your rights (GDPR)</h2>
@@ -246,21 +228,19 @@ export default function PrivacyPolicyPage() {
         <li>Object to processing based on legitimate interest</li>
         <li>Withdraw consent where processing is based on consent</li>
         <li>
-          Lodge a complaint with your supervisory authority (e.g. the German
-          BfDI or your local DPA)
+          Lodge a complaint with your supervisory authority (e.g. the German BfDI or your local DPA)
         </li>
       </ul>
       <p>
-        Email <a href="mailto:privacy@envstore.xyz">privacy@envstore.xyz</a>{' '}
-        to exercise any of these rights. We aim to respond within 30 days.
+        Email <a href="mailto:privacy@envstore.xyz">privacy@envstore.xyz</a> to exercise any of
+        these rights. We aim to respond within 30 days.
       </p>
 
       <h2>Cookies</h2>
       <p>
-        We use only essential cookies — the session cookie that keeps you
-        signed in, and CSRF tokens for form security. We don't run analytics
-        tracking, advertising pixels, or any third-party cookies on our own
-        pages.
+        We use only essential cookies — the session cookie that keeps you signed in, and CSRF tokens
+        for form security. We don't run analytics tracking, advertising pixels, or any third-party
+        cookies on our own pages.
       </p>
 
       <h2>Security</h2>
@@ -269,12 +249,15 @@ export default function PrivacyPolicyPage() {
         <a href="https://github.com/FiloSottile/age" target="_blank" rel="noreferrer">
           age
         </a>{' '}
-        (X25519 + ChaCha20-Poly1305). Transport over HTTPS. CLI tokens stored
-        as SHA-256 hashes. Bearer tokens scoped per user, revocable from the
-        dashboard, with a default 90-day TTL. Rate limiting on authentication
-        endpoints. Strict response headers including HSTS, X-Frame-Options,
-        Referrer-Policy, and Permissions-Policy. The source code is open and
-        auditable: <a href="https://github.com/michael-ketzer/envstore.xyz" target="_blank" rel="noreferrer">github.com/michael-ketzer/envstore.xyz</a>.
+        (X25519 + ChaCha20-Poly1305). Transport over HTTPS. CLI tokens stored as SHA-256 hashes.
+        Bearer tokens scoped per user, revocable from the dashboard, with a default 90-day TTL. Rate
+        limiting on authentication endpoints. Strict response headers including HSTS,
+        X-Frame-Options, Referrer-Policy, and Permissions-Policy. The source code is open and
+        auditable:{' '}
+        <a href="https://github.com/michael-ketzer/envstore.xyz" target="_blank" rel="noreferrer">
+          github.com/michael-ketzer/envstore.xyz
+        </a>
+        .
       </p>
       <p>
         Found something concerning? See our{' '}
@@ -290,9 +273,8 @@ export default function PrivacyPolicyPage() {
 
       <h2>Changes to this policy</h2>
       <p>
-        We'll post material changes at this page and, if the change is
-        significant, email everyone with an active account at least 14 days
-        before it takes effect.
+        We'll post material changes at this page and, if the change is significant, email everyone
+        with an active account at least 14 days before it takes effect.
       </p>
 
       <h2>Contact</h2>

@@ -39,7 +39,14 @@ export async function runRetentionSweep(): Promise<SweepResult> {
   // server-side: Postgres can't easily compute "deletedAt + N days" inline
   // without an interval helper, so we do it in JS for clarity.
   const expiredWorkspaces = await prisma.workspace.findMany({
-    where: { deletedAt: { not: null } },
+    // Managed key deletion is outside the API scope. Preserve metadata and
+    // audit history even when a workspace is soft-deleted (runtime denies it).
+    where: {
+      deletedAt: { not: null },
+      managedKeys: { none: {} },
+      managedKeyCredentials: { none: {} },
+      managedKeyAuditEvents: { none: {} },
+    },
     select: { id: true, slug: true, deletedAt: true, softDeleteRetentionDays: true },
   });
   for (const ws of expiredWorkspaces) {

@@ -5,6 +5,10 @@ is for going deeper.
 
 ## Start here
 
+- **[managed-keys.md](managed-keys.md)** — optional application key API, OpenBao
+  setup, administration, isolation, and the separate trust model.
+- **[openbao-operations.md](openbao-operations.md)** — hosted media-server service,
+  credential renewal, encrypted backups, recovery, and availability limits.
 - **[concepts.md](concepts.md)** — the model: workspace, project, environment,
   recipient, version, identity, service token. Read this first if anything in
   the CLI feels confusing.

@@ -6,8 +6,7 @@ import { z } from 'zod';
 // Treat empty / whitespace-only strings as "unset". Otherwise `OPT=""` in
 // .env (as our .env.example showed) would fail .min(1)/.email()/.url() rather
 // than being absent.
-const blankToUndefined = (v: unknown) =>
-  typeof v === 'string' && v.trim() === '' ? undefined : v;
+const blankToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 
 const optionalString = z.preprocess(blankToUndefined, z.string().min(1).optional());
 const optionalUrl = z.preprocess(blankToUndefined, z.string().url().optional());
@@ -42,10 +41,7 @@ const serverEnvSchema = z.object({
   // We verify with RESEND_WEBHOOK_SECRET and forward the message body to
   // RESEND_INBOUND_FORWARD_TO. Leaving either unset disables forwarding.
   RESEND_WEBHOOK_SECRET: optionalString,
-  RESEND_INBOUND_FORWARD_TO: z.preprocess(
-    blankToUndefined,
-    z.string().email().optional(),
-  ),
+  RESEND_INBOUND_FORWARD_TO: z.preprocess(blankToUndefined, z.string().email().optional()),
 
   // R2
   R2_ACCOUNT_ID: optionalString,
@@ -83,6 +79,26 @@ const serverEnvSchema = z.object({
   // running un-authed deletes.
   CRON_SECRET: optionalString,
 
+  // Opt-in managed-key service. Use distinct least-privilege Transit tokens.
+  OPENBAO_URL: optionalUrl,
+  OPENBAO_RUNTIME_TOKEN: optionalString,
+  OPENBAO_ADMIN_TOKEN: optionalString,
+  // Upload-only broker for age-encrypted OpenBao snapshots. No R2 credentials
+  // need to leave this deployment; the host cannot read or delete other data.
+  OPENBAO_BACKUP_TOKEN: optionalString,
+  OPENBAO_TRANSIT_MOUNT: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .default('transit'),
+  ),
+  // Enable only behind an ingress that OVERWRITES X-Forwarded-Proto and
+  // prevents direct access to the app. Otherwise request URLs must be HTTPS.
+  MANAGED_KEYS_TRUST_PROXY: z
+    .preprocess(blankToUndefined, z.enum(['true', 'false']).default('false'))
+    .transform((v) => v === 'true'),
+
   // Number of trusted proxy hops between the public internet and this
   // process. Rate limiters key on the client IP, which we extract from
   // x-forwarded-for; an untrusted appender to that header would otherwise
@@ -119,19 +135,18 @@ export const env = parsed.data;
 
 // Feature flags derived from which env vars are present.
 export const features = {
+  managedKeys: Boolean(env.OPENBAO_URL && env.OPENBAO_RUNTIME_TOKEN && env.OPENBAO_ADMIN_TOKEN),
   githubAuth: Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET),
   googleAuth: Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET),
   emailOtp: Boolean(env.RESEND_API_KEY && env.RESEND_FROM),
   emailInboundForward: Boolean(
     env.RESEND_API_KEY &&
-      env.RESEND_FROM &&
-      env.RESEND_WEBHOOK_SECRET &&
-      env.RESEND_INBOUND_FORWARD_TO,
+    env.RESEND_FROM &&
+    env.RESEND_WEBHOOK_SECRET &&
+    env.RESEND_INBOUND_FORWARD_TO,
   ),
   r2: Boolean(
     env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET,
   ),
-  paddle: Boolean(
-    env.PADDLE_API_KEY && env.PADDLE_WEBHOOK_SECRET && env.PADDLE_PRICE_ID_TEAM,
-  ),
+  paddle: Boolean(env.PADDLE_API_KEY && env.PADDLE_WEBHOOK_SECRET && env.PADDLE_PRICE_ID_TEAM),
 } as const;

@@ -55,8 +55,35 @@ export const credentialSchema = z
       .refine((grants) => new Set(grants.map((g) => g.keyId)).size === grants.length),
   })
   .strict();
+// Applications name the key in the request body; the tenant comes from context.
+export const applicationUnwrapSchema = unwrapSchema.extend({ keyId: keyIdSchema }).strict();
+export const applicationSchema = z
+  .object({
+    name: identifier,
+    environment: identifier,
+    purpose: identifier,
+    keyName: identifier,
+    maxTenants: z.number().int().min(1).max(100000).default(1000),
+    // A Vercel deployment identity: immutable team and project IDs plus the
+    // deployment environment (development, preview, production, or custom).
+    vercel: z
+      .object({
+        teamId: z.string().regex(/^team_[A-Za-z0-9]{1,64}$/),
+        projectId: z.string().regex(/^prj_[A-Za-z0-9]{1,64}$/),
+        environment: identifier,
+      })
+      .strict()
+      .optional(),
+    token: z
+      .object({ expiresInDays: z.number().int().min(1).max(365).default(90) })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine((v) => Boolean(v.vercel) !== Boolean(v.token));
 export type BindingContext = z.infer<typeof contextSchema>;
 export type Operation = 'generate' | 'unwrap';
 export const PROVIDER = 'envstore-openbao-transit' as const;
 export const VERSION = 1 as const;
 export const CREDENTIAL_PREFIX = 'esmk_';
+export const APPLICATION_TOKEN_PREFIX = 'esma_';

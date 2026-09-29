@@ -46,6 +46,7 @@ export async function runRetentionSweep(): Promise<SweepResult> {
       managedKeys: { none: {} },
       managedKeyCredentials: { none: {} },
       managedKeyAuditEvents: { none: {} },
+      managedKeyApplications: { none: {} },
     },
     select: { id: true, slug: true, deletedAt: true, softDeleteRetentionDays: true },
   });

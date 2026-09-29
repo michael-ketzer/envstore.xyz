@@ -6,8 +6,20 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 
 mock.module('server-only', () => ({}));
+const { SignJWT, exportJWK, generateKeyPair } = await import('jose');
+const vercelKey = await generateKeyPair('RS256');
+const vercelKeySet = {
+  keys: [{ ...(await exportJWK(vercelKey.publicKey)), kid: 'smoke', alg: 'RS256' }],
+};
+const realFetch = globalThis.fetch;
+// Stands in for Vercel's public key set only; OpenBao and everything else are real.
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+  String(input) === 'https://oidc.vercel.com/.well-known/jwks'
+    ? Response.json(vercelKeySet)
+    : realFetch(input, init)) as typeof fetch;
 const { prisma } = await import('@envstore/db');
 const { adminRequest, runtimeRequest } = await import('../src/lib/managed-keys/service');
+const { applicationRequest } = await import('../src/lib/managed-keys/applications');
 const { runRetentionSweep } = await import('../src/lib/retention-sweep');
 const adminToken = randomUUID();
 const user = await prisma.user.create({ data: { email: `managed-${randomUUID()}@test.example` } });
@@ -205,6 +217,138 @@ try {
   assert.ok(!JSON.stringify(audit).includes(generated.plaintextKey));
   assert.ok(!JSON.stringify(audit).includes(generated.wrappedKey));
   assert.ok(!JSON.stringify(audit).includes(context.campaignId));
+  // Applications: one registration serves every tenant; tenant keys appear on first use.
+  const deployment = (claims: Record<string, string> = {}) =>
+    new SignJWT({
+      owner_id: 'team_smoke',
+      project_id: 'prj_smoke',
+      environment: 'production',
+      ...claims,
+    })
+      .setProtectedHeader({ alg: 'RS256', kid: 'smoke' })
+      .setIssuer('https://oidc.vercel.com/smoke')
+      .setAudience(process.env.NEXT_PUBLIC_APP_URL!)
+      .setIssuedAt()
+      .setExpirationTime('2h')
+      .sign(vercelKey.privateKey);
+  const register = (body: unknown) =>
+    adminRequest(request(adminToken, body), workspace.slug, 'application.register');
+  const application = {
+    name: 'shinra-production',
+    environment: 'production',
+    purpose: context.purpose,
+    keyName: 'creator-briefings',
+    maxTenants: 3,
+    vercel: { teamId: 'team_smoke', projectId: 'prj_smoke', environment: 'production' },
+  };
+  const registered = await result(await register(application), 201);
+  assert.equal(
+    (await result(await register(application))).application.id,
+    registered.application.id,
+  );
+  await result(await register({ ...application, name: 'duplicate' }), 409);
+  const appRequest = (token: string, body: unknown, operation: 'generate' | 'unwrap') =>
+    applicationRequest(request(token, body), workspace.slug, operation);
+  // A key created by an administrator for tenant credentials stays readable.
+  const legacy = await result(
+    await adminRequest(
+      request(adminToken, { ...provision, tenantId: 'team-3', name: 'creator-briefings' }),
+      workspace.slug,
+      'key.provision',
+    ),
+  );
+  const legacyCredential = await result(
+    await adminRequest(
+      request(adminToken, {
+        applicationId: 'shinra',
+        tenantId: 'team-3',
+        environment: 'production',
+        grants: [{ keyId: legacy.key.id, operations: ['generate'] }],
+      }),
+      workspace.slug,
+      'credential.issue',
+    ),
+    201,
+  );
+  const tenant3 = { ...context, teamId: 'team-3' };
+  const legacyEnvelope = await result(
+    await runtimeRequest(
+      request(legacyCredential.token, { context: tenant3 }),
+      legacy.key.id,
+      'generate',
+    ),
+  );
+  const token = await deployment();
+  const reopened = await result(
+    await appRequest(
+      token,
+      { context: tenant3, keyId: legacy.key.id, wrappedKey: legacyEnvelope.wrappedKey },
+      'unwrap',
+    ),
+  );
+  assert.equal(reopened.plaintextKey, legacyEnvelope.plaintextKey);
+  // A new tenant gets its own engine key on first use, then reuses it.
+  const tenant4 = { ...context, teamId: 'team-4' };
+  const firstUse = await result(await appRequest(token, { context: tenant4 }, 'generate'));
+  const reuse = await result(await appRequest(token, { context: tenant4 }, 'generate'));
+  assert.equal(reuse.keyId, firstUse.keyId);
+  assert.notEqual(firstUse.keyId, legacy.key.id);
+  const created = await prisma.managedKey.findUniqueOrThrow({ where: { id: firstUse.keyId } });
+  assert.equal(created.tenantId, 'team-4');
+  assert.equal(created.name, 'creator-briefings');
+  assert.ok(created.provisionedAt);
+  const envelope = { context: tenant4, keyId: firstUse.keyId, wrappedKey: firstUse.wrappedKey };
+  assert.equal(
+    (await result(await appRequest(token, envelope, 'unwrap'))).plaintextKey,
+    firstUse.plaintextKey,
+  );
+  // Tenant, deployment environment, audience, and limits all bind.
+  await result(
+    await appRequest(token, { ...envelope, context: { ...tenant4, teamId: 'team-3' } }, 'unwrap'),
+    403,
+  );
+  await result(
+    await appRequest(token, { ...envelope, context: { ...tenant4, campaignId: 'x' } }, 'unwrap'),
+    400,
+  );
+  await result(
+    await appRequest(await deployment({ environment: 'preview' }), envelope, 'unwrap'),
+    403,
+  );
+  await result(
+    await appRequest(await deployment({ project_id: 'prj_other' }), envelope, 'unwrap'),
+    403,
+  );
+  await result(await appRequest(token, { context: { ...context, teamId: 'team-5' } }, 'generate'));
+  await result(
+    await appRequest(token, { context: { ...context, teamId: 'team-6' } }, 'generate'),
+    403,
+  );
+  assert.equal(await prisma.managedKey.count({ where: { tenantId: 'team-6' } }), 0);
+  // Static tokens for callers outside Vercel.
+  const { vercel: _, ...scope } = application;
+  const issued = await result(
+    await register({ ...scope, name: 'shinra-local', token: { expiresInDays: 1 } }),
+    201,
+  );
+  assert.equal(
+    (await result(await appRequest(issued.token, envelope, 'unwrap'))).plaintextKey,
+    firstUse.plaintextKey,
+  );
+  await result(
+    await adminRequest(
+      request(adminToken, {}),
+      workspace.slug,
+      'application.revoke',
+      registered.application.id,
+    ),
+  );
+  await result(await appRequest(token, envelope, 'unwrap'), 403);
+  const events = await prisma.managedKeyAuditEvent.findMany({
+    where: { applicationId: registered.application.id },
+  });
+  assert.ok(events.some((e) => e.operation === 'key.provision' && e.keyId === firstUse.keyId));
+  assert.ok(!JSON.stringify(events).includes(firstUse.plaintextKey));
   await prisma.workspace.update({ where: { id: workspace.id }, data: { deletedAt: new Date(0) } });
   await runRetentionSweep();
   assert.ok(await prisma.workspace.findUnique({ where: { id: workspace.id } }));
@@ -212,8 +356,9 @@ try {
     await runtimeRequest(request(replacement.token, { context }), keyId, 'generate'),
     401,
   );
+  await result(await appRequest(issued.token, envelope, 'unwrap'), 401);
   process.stdout.write(
-    'Managed-key smoke passed: provisioning, isolation, generate/unwrap, rotation, ACLs, revocation, disable, audit, and retention.\n',
+    'Managed-key smoke passed: provisioning, isolation, generate/unwrap, rotation, ACLs, revocation, disable, applications, audit, and retention.\n',
   );
 } finally {
   await prisma.$disconnect();

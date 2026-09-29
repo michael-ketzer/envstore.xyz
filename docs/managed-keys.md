@@ -85,11 +85,94 @@ version must remain readable through the AWS provider. Introduce a distinct
 provider/envelope version for new envstore records; do not reinterpret AWS-wrapped
 bytes or silently change existing ciphertext's context.
 
+## Applications
+
+A backend that serves many tenants registers once per environment instead of
+holding one credential per tenant. An application:
+
+- **Authenticates** as a Vercel deployment (OIDC, nothing stored) or with one
+  static `esma_…` token for callers outside Vercel. A Vercel application is bound
+  to the token's immutable team ID (`owner_id`), project ID (`project_id`), and
+  deployment environment (`environment`) claims, never to renameable names.
+- **Acts for every tenant** of one key `purpose` in one envstore `environment`,
+  using keys named `keyName`. The tenant is `context.teamId`.
+- **Creates a tenant's key on first use.** `generate` provisions a missing key
+  with the same fixed Transit settings as administrator provisioning, up to
+  `maxTenants` keys per environment and key name. It never replaces, re-enables,
+  or re-purposes a key, and unwrap never creates one. Keys an administrator
+  provisioned with the same environment, name, and purpose are used as they are,
+  so envelopes created with tenant credentials stay readable.
+
+An application has authority across all tenants in its scope, as an application
+holding every tenant credential would. Disable one tenant's key to cut that
+tenant off; revoke the application to stop all access.
+
+### Application runtime
+
+`POST /api/v1/workspaces/{workspaceSlug}/data-keys` takes `{ "context": … }` and
+returns the same response as credential generation, including the tenant's
+`keyId`. Store it with the envelope.
+
+`POST /api/v1/workspaces/{workspaceSlug}/data-keys/unwrap` takes `context`,
+`keyId`, and `wrappedKey`.
+
+On Vercel, enable "Secure backend access with OIDC federation" in the project's
+security settings and send a token minted for this installation:
+
+```ts
+import { getVercelOidcToken } from '@vercel/oidc';
+
+const token = await getVercelOidcToken({ audience: 'https://www.envstore.xyz' });
+```
+
+The audience is `MANAGED_KEYS_AUDIENCE`, defaulting to the origin of
+`NEXT_PUBLIC_APP_URL`. Tokens with Vercel's default audience are refused, so a
+token issued to another service cannot be replayed here. Tokens are verified
+against Vercel's published key set (`https://oidc.vercel.com/.well-known/jwks`,
+RS256 only) with 30 seconds of clock tolerance and a 12-hour maximum age. Team
+and global issuer modes both work.
+
+- Vercel tokens name the environment, not the git branch: every preview
+  deployment of a project shares preview access. Give previews their own
+  envstore environment so they never reach production keys.
+- Development tokens (`vercel env pull`, valid 12 hours) are available to every
+  member of the Vercel team. Register a development application only for
+  development keys.
+- Each application has a budget of 1,200 requests per minute, and 120 per tenant,
+  per process, in addition to the ingress limits below.
+
+### Registering applications
+
+Workspace administrators (see [Administration](#administration)) register with
+`POST /api/v1/workspaces/{workspaceSlug}/managed-keys/applications`:
+
+```json
+{
+  "name": "shinra-production",
+  "environment": "production",
+  "purpose": "shinra-creator-briefing-v1",
+  "keyName": "creator-briefings",
+  "maxTenants": 1000,
+  "vercel": {
+    "teamId": "team_…",
+    "projectId": "prj_…",
+    "environment": "production"
+  }
+}
+```
+
+For a static token, replace `vercel` with `"token": { "expiresInDays": 30 }`
+(1–365 days, 90 by default). The token is returned once and stored hashed.
+Names are unique per workspace. Registering the same Vercel deployment again is
+idempotent and may change only `maxTenants`; any other change conflicts (revoke
+and register a new name). A deployment has at most one active application per
+purpose.
+
 ## Administration
 
 Use a **human CLI bearer token** belonging to an OWNER or ADMIN in the workspace.
-Application and recipient-based workspace credentials cannot administer keys or
-mint credentials. The base path is
+Application credentials and tokens, Vercel deployments, and recipient-based
+workspace credentials cannot administer keys or mint credentials. The base path is
 `/api/v1/workspaces/{workspaceSlug}/managed-keys`.
 
 | Method and suffix                    | Purpose                                                            |
@@ -101,6 +184,9 @@ mint credentials. The base path is
 | `POST /credentials`                  | Issue an application credential, returned once                     |
 | `GET /credentials`                   | List credentials and grants (up to 1,000, never hashes or bearers) |
 | `DELETE /credentials/{credentialId}` | Idempotently revoke a credential                                   |
+| `POST /applications`                 | Register an application (a static token is returned once)          |
+| `GET /applications`                  | List applications (up to 1,000, never token hashes)                |
+| `DELETE /applications/{id}`          | Idempotently revoke an application                                 |
 | `GET /audit?limit=100&cursor=…`      | Read audit events (maximum 200 per page)                           |
 
 Provisioning body:
@@ -144,6 +230,8 @@ to the credential's workspace, tenant, and environment. Each tenant/environment
 requires its own credential. An application holding many tenant credentials
 still has authority across those tenants. Provision separate keys for each
 production/staging tenant. No implicit access follows from application IDs.
+Backends serving many tenants should register an [application](#applications)
+instead.
 
 Credential issuance is deliberately not replayable: if the response is lost,
 list and revoke the orphaned credential, then issue another. Rotation may add
@@ -154,8 +242,9 @@ in-flight response race. Disabling is an envstore authorization gate; operators
 with direct OpenBao access retain authority. There is no re-enable or permanent
 key deletion API in this version.
 
-Audit records contain caller IDs, key ID (where applicable), operation, outcome,
-and time. No context or key bytes are stored. An `attempted` event is persisted
+Audit records contain caller IDs (user, credential, or application), key ID
+(where applicable), operation, outcome, and time. Keys created by an application
+leave a `key.provision` event with its ID. No context or key bytes are stored. An `attempted` event is persisted
 before an authorized engine operation; terminal `success`, `denied`, or `error`
 is required before returning material. A crash can leave `attempted` events.
 A success means the operation completed, not proof that the client received it.
@@ -176,6 +265,8 @@ access. Permanent deletion and audit-retention policies require separate design.
    at the configured mount (do not share it with other services). Use HTTPS in production.
 3. Give envstore separate runtime and administration tokens with the policies
    below. Root tokens are for bootstrap only and must not be configured in envstore.
+   Applications' first-use key creation uses the administration token for key
+   creation only, with the same fixed settings.
 4. Set `OPENBAO_URL`, `OPENBAO_TRANSIT_MOUNT` (default `transit`),
    `OPENBAO_RUNTIME_TOKEN`, and `OPENBAO_ADMIN_TOKEN` in the server secret store.
 5. Restart envstore and provision each tenant/environment key through its API.

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
-import { makeDbMock } from '@/test/db-mock';
+import { FakePrismaKnownError, makeDbMock } from '@/test/db-mock';
 import { makeEnvMock } from '@/test/env-mock';
 import type { BindingContext } from './contracts';
 
@@ -33,6 +33,9 @@ const db = {
   cliToken: { findUnique: mock(), update: mock() },
   workspace: { findFirst: mock() },
   workspaceMember: { findUnique: mock() },
+  // Interactive transactions run against the same mocks; $executeRaw takes locks.
+  $transaction: mock(),
+  $executeRaw: mock(),
 };
 const config = {
   NODE_ENV: 'test',
@@ -122,7 +125,12 @@ function response(data: unknown, status = 200) {
 }
 
 beforeEach(() => {
-  for (const model of Object.values(db)) for (const fn of Object.values(model)) fn.mockReset();
+  for (const model of Object.values(db)) {
+    if (typeof model === 'function') model.mockReset();
+    else for (const fn of Object.values(model)) fn.mockReset();
+  }
+  db.$transaction.mockImplementation(async (work: (tx: typeof db) => unknown) => work(db));
+  db.$executeRaw.mockResolvedValue(0);
   Object.assign(config, {
     OPENBAO_URL: 'https://bao.test',
     MANAGED_KEYS_TRUST_PROXY: false,
@@ -573,11 +581,16 @@ describe('applications', () => {
   test('creates a tenant key on first use with the fixed engine settings', async () => {
     db.managedKey.findUnique
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ ...key, provisionedAt: new Date() })
       .mockImplementation(async () => stored);
     db.managedKey.upsert.mockResolvedValue({ ...key, provisionedAt: null });
     const r = await appGenerateRoute(...appReq(await vercelToken()));
     expect(r.status).toBe(200);
+    // Counting and creation happen under a lock for this key space.
+    expect(db.$executeRaw.mock.calls[0]!.slice(1)).toEqual([
+      'managed-key-tenants:ws-1:production:briefings',
+    ]);
     expect(db.managedKey.upsert.mock.calls[0]![0]).toMatchObject({
       where: {
         workspaceId_tenantId_environment_name: {
@@ -601,6 +614,16 @@ describe('applications', () => {
     });
     const operations = db.managedKeyAuditEvent.create.mock.calls.map((c) => c[0].data.operation);
     expect(operations).toEqual(['data-key.generate', 'key.provision']);
+  });
+
+  test('a concurrent first use is settled under the lock', async () => {
+    db.managedKey.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...key })
+      .mockImplementation(async () => stored);
+    expect((await appGenerateRoute(...appReq(await vercelToken()))).status).toBe(200);
+    expect(db.managedKey.count).not.toHaveBeenCalled();
+    expect(db.managedKey.upsert).not.toHaveBeenCalled();
   });
 
   test('never creates keys past the tenant limit or over another purpose, disabled key', async () => {
@@ -769,7 +792,16 @@ describe('applications', () => {
     expect(
       (await adminRequest(adminReq(renamed, url), 'workspace', 'application.register')).status,
     ).toBe(409);
+    // The deployment check runs under a lock for that identity.
+    expect(db.$executeRaw.mock.calls.at(-1)!.slice(1)).toEqual([
+      `managed-key-application:ws-1:${context.purpose}:team_abc:prj_def:production`,
+    ]);
     db.managedKeyApplication.findFirst.mockResolvedValue(null);
+    // A concurrent registration that took the name first is a conflict too.
+    db.managedKeyApplication.create.mockRejectedValueOnce(new FakePrismaKnownError('P2002'));
+    expect(
+      (await adminRequest(adminReq(renamed, url), 'workspace', 'application.register')).status,
+    ).toBe(409);
     const { vercel: _, ...tokenInput } = { ...input, token: { expiresInDays: 30 } };
     const issued = await adminRequest(
       adminReq(tokenInput, url),
@@ -779,7 +811,7 @@ describe('applications', () => {
     expect(issued.status).toBe(201);
     const secret = (await issued.json()).token;
     expect(secret).toMatch(/^esma_[A-Za-z0-9_-]{43}$/);
-    const saved = db.managedKeyApplication.create.mock.calls[1]![0].data;
+    const saved = db.managedKeyApplication.create.mock.calls.at(-1)![0].data;
     expect(saved.tokenHash).toBe(createHash('sha256').update(secret).digest('hex'));
     expect(JSON.stringify(saved)).not.toContain(secret);
     for (const bad of [

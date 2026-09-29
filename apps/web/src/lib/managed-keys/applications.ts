@@ -1,6 +1,6 @@
 import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
-import { prisma, type ManagedKey, type Prisma } from '@envstore/db';
+import { Prisma, prisma, type ManagedKey } from '@envstore/db';
 import { audited, bearer, throttle, type Audit } from './common';
 import {
   APPLICATION_TOKEN_PREFIX,
@@ -125,20 +125,28 @@ async function tenantKey(application: Application, tenantId: string): Promise<Ma
   const where = { workspaceId_tenantId_environment_name: scope };
   let key = await prisma.managedKey.findUnique({ where });
   if (!key) {
-    const tenants = await prisma.managedKey.count({
-      where: {
-        workspaceId: application.workspaceId,
-        environment: application.environment,
-        name: application.keyName,
-      },
-    });
-    if (tenants >= application.maxTenants) {
-      throw new ManagedKeyError(403, 'Application tenant limit reached.');
-    }
-    key = await prisma.managedKey.upsert({
-      where,
-      create: { ...scope, purpose: application.purpose },
-      update: {},
+    key = await prisma.$transaction(async (tx) => {
+      // Serialize first use within this key space so the tenant limit holds
+      // for concurrent requests. Postgres releases the lock with the transaction.
+      const space = `managed-key-tenants:${scope.workspaceId}:${scope.environment}:${scope.name}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${space}))`;
+      const existing = await tx.managedKey.findUnique({ where });
+      if (existing) return existing;
+      const tenants = await tx.managedKey.count({
+        where: {
+          workspaceId: scope.workspaceId,
+          environment: scope.environment,
+          name: scope.name,
+        },
+      });
+      if (tenants >= application.maxTenants) {
+        throw new ManagedKeyError(403, 'Application tenant limit reached.');
+      }
+      return tx.managedKey.upsert({
+        where,
+        create: { ...scope, purpose: application.purpose },
+        update: {},
+      });
     });
   }
   if (key.purpose !== application.purpose) throw forbidden();
@@ -304,49 +312,62 @@ export async function applicationAdmin(
     });
     return json({ application });
   }
-  if (vercel) {
-    const clash = await prisma.managedKeyApplication.findFirst({
-      where: {
-        workspaceId,
-        purpose: scope.purpose,
-        vercelTeamId: vercel.teamId,
-        vercelProjectId: vercel.projectId,
-        vercelEnvironment: vercel.environment,
-        revokedAt: null,
-      },
-      select: { id: true },
-    });
-    if (clash) {
-      throw new ManagedKeyError(
-        409,
-        'This deployment already has an application for this purpose.',
-      );
-    }
-  }
   const secret = token
     ? `${APPLICATION_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
     : undefined;
-  const application = await prisma.managedKeyApplication.create({
-    data: {
-      ...scope,
-      workspaceId,
-      createdByUserId: userId,
-      ...(vercel
-        ? {
+  const data = {
+    ...scope,
+    workspaceId,
+    createdByUserId: userId,
+    ...(vercel
+      ? {
+          vercelTeamId: vercel.teamId,
+          vercelProjectId: vercel.projectId,
+          vercelEnvironment: vercel.environment,
+        }
+      : {}),
+    ...(secret && token
+      ? {
+          tokenHash: digest(secret),
+          expiresAt: new Date(Date.now() + token.expiresInDays * 86400000),
+        }
+      : {}),
+  };
+  let application;
+  try {
+    application = await prisma.$transaction(async (tx) => {
+      if (vercel) {
+        // At most one active application per deployment and purpose, also for
+        // concurrent registrations. Postgres releases the lock with the transaction.
+        const identity = `managed-key-application:${workspaceId}:${scope.purpose}:${vercel.teamId}:${vercel.projectId}:${vercel.environment}`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${identity}))`;
+        const clash = await tx.managedKeyApplication.findFirst({
+          where: {
+            workspaceId,
+            purpose: scope.purpose,
             vercelTeamId: vercel.teamId,
             vercelProjectId: vercel.projectId,
             vercelEnvironment: vercel.environment,
-          }
-        : {}),
-      ...(secret && token
-        ? {
-            tokenHash: digest(secret),
-            expiresAt: new Date(Date.now() + token.expiresInDays * 86400000),
-          }
-        : {}),
-    },
-    select,
-  });
+            revokedAt: null,
+          },
+          select: { id: true },
+        });
+        if (clash) {
+          throw new ManagedKeyError(
+            409,
+            'This deployment already has an application for this purpose.',
+          );
+        }
+      }
+      return tx.managedKeyApplication.create({ data, select });
+    });
+  } catch (error) {
+    // A concurrent registration took the name first.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new ManagedKeyError(409, 'An application with this name already exists.');
+    }
+    throw error;
+  }
   audit.applicationId = application.id;
   return json({ application, ...(secret ? { token: secret } : {}) }, 201);
 }

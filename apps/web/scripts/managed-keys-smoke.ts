@@ -335,6 +335,34 @@ try {
     (await result(await appRequest(issued.token, envelope, 'unwrap'))).plaintextKey,
     firstUse.plaintextKey,
   );
+  // Real concurrency: the tenant limit and one-application-per-deployment hold.
+  const racer = await result(
+    await register({
+      ...scope,
+      name: 'race',
+      keyName: 'race-keys',
+      maxTenants: 2,
+      token: { expiresInDays: 1 },
+    }),
+    201,
+  );
+  const raced = await Promise.all(
+    // Enough contention to exceed the limit without serialization (checked).
+    Array.from({ length: 30 }, (_, n) => n + 1).map((n) =>
+      appRequest(racer.token, { context: { ...context, teamId: `race-${n}` } }, 'generate'),
+    ),
+  );
+  assert.equal(raced.filter((r) => r.status === 200).length, 2);
+  assert.ok(raced.every((r) => r.status === 200 || r.status === 403));
+  assert.equal(await prisma.managedKey.count({ where: { name: 'race-keys' } }), 2);
+  const preview = { ...application.vercel, environment: 'preview' };
+  const registrations = await Promise.all(
+    Array.from({ length: 10 }, (_, n) =>
+      register({ ...application, name: `dup-${n}`, vercel: preview }),
+    ),
+  );
+  assert.equal(registrations.filter((r) => r.status === 201).length, 1);
+  assert.ok(registrations.every((r) => r.status === 201 || r.status === 409));
   await result(
     await adminRequest(
       request(adminToken, {}),

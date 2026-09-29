@@ -7,8 +7,8 @@ longer one with the threat-model details.
 This page's zero-knowledge guarantees apply to age-encrypted `.env` storage.
 The optional [managed-key API](managed-keys.md) trusts envstore and OpenBao with
 decryption authority and transient plaintext data keys. It does not receive
-application briefing bodies. Its application credentials are separate from
-recipient-bound workspace tokens.
+application briefing bodies. Its application credentials, application tokens,
+and trusted Vercel deployments are separate from recipient-bound workspace tokens.
 
 ## The hard rule
 

@@ -49,8 +49,9 @@ The following zero-knowledge model covers recipient-based `.env` storage.
 The optional [managed-key API](docs/managed-keys.md) has a different trust model:
 envstore and OpenBao can unwrap application data keys. Compromise of that service
 or an authorized application credential can expose the corresponding application
-data. Managed-key authorization, isolation, and `/v1/keys/*` endpoints are also
-in scope for security reports.
+data. Managed-key authorization, isolation, application (Vercel OIDC) identity,
+and the `/v1/keys/*` and `/api/v1/workspaces/*/data-keys` endpoints are also in
+scope for security reports.
 
 We assume:
 

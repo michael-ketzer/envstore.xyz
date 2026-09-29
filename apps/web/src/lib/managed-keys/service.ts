@@ -2,14 +2,15 @@ import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import { prisma, type ManagedKey, type Prisma } from '@envstore/db';
 import { authenticateBearer, resolveWorkspaceForAuth } from '@/lib/api-auth';
-import { rateLimit } from '@/lib/rate-limit';
+import { applicationAdmin, type ApplicationAction } from './applications';
+import { audited, bearer, parseId, throttle, type Audit } from './common';
 import {
+  APPLICATION_TOKEN_PREFIX,
   CREDENTIAL_PREFIX,
   PROVIDER,
   VERSION,
   credentialSchema,
   generateSchema,
-  keyIdSchema,
   provisionSchema,
   unwrapSchema,
   type BindingContext,
@@ -18,55 +19,9 @@ import {
 import { ManagedKeyError, errorResponse, json, requestJson, requireService } from './http';
 import * as engine from './openbao';
 
-type Actor = { workspaceId?: string; userId?: string; credentialId?: string };
-type Audit = Actor & { keyId?: string; targetCredentialId?: string; operation: string };
-
-// An attempt is durable before touching the engine. A failed terminal audit
-// write prevents key/credential delivery; the attempt remains for reconciliation.
-async function audited(audit: Audit, work: () => Promise<Response>): Promise<Response> {
-  const event = await prisma.managedKeyAuditEvent.create({
-    data: { ...audit, outcome: 'attempted' },
-  });
-  try {
-    const response = await work();
-    await prisma.managedKeyAuditEvent.update({
-      where: { id: event.id },
-      data: {
-        keyId: audit.keyId,
-        targetCredentialId: audit.targetCredentialId,
-        outcome: 'success',
-      },
-    });
-    return response;
-  } catch (error) {
-    await prisma.managedKeyAuditEvent.update({
-      where: { id: event.id },
-      data: {
-        keyId: audit.keyId,
-        targetCredentialId: audit.targetCredentialId,
-        outcome: error instanceof ManagedKeyError && error.status < 500 ? 'denied' : 'error',
-      },
-    });
-    throw error;
-  }
-}
-
-function throttle(actor: string): void {
-  const limit = rateLimit(`managed-keys:${actor}`, { limit: 120, windowSec: 60 });
-  if (!limit.success) throw new ManagedKeyError(429, 'Too many managed key requests.');
-}
-
-function parseId(id: string): string {
-  const result = keyIdSchema.safeParse(id);
-  if (!result.success) throw new ManagedKeyError(400, 'Invalid identifier.');
-  return result.data;
-}
-
 function tokenHash(req: Request): string | null {
-  const value = req.headers.get('authorization');
-  if (!value?.startsWith(`Bearer ${CREDENTIAL_PREFIX}`)) return null;
-  const token = value.slice(7);
-  if (!/^esmk_[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  const token = bearer(req);
+  if (!token || !/^esmk_[A-Za-z0-9_-]{43}$/.test(token)) return null;
   return createHash('sha256').update(token).digest('hex');
 }
 
@@ -167,11 +122,13 @@ export type AdminAction =
   | 'credential.list'
   | 'credential.issue'
   | 'credential.revoke'
-  | 'audit.list';
+  | 'audit.list'
+  | ApplicationAction;
 
 async function admin(req: Request, workspaceSlug: string): Promise<Admin> {
   // Application credentials have no path into user authentication or ACLs.
-  if (req.headers.get('authorization')?.startsWith(`Bearer ${CREDENTIAL_PREFIX}`)) {
+  const token = bearer(req);
+  if (token?.startsWith(CREDENTIAL_PREFIX) || token?.startsWith(APPLICATION_TOKEN_PREFIX)) {
     throw new ManagedKeyError(403, 'User administrator authentication is required.');
   }
   const auth = await authenticateBearer(req);
@@ -222,6 +179,9 @@ async function performAdmin(
   id?: string,
 ): Promise<Response> {
   const { workspaceId, userId } = actor;
+  if (action.startsWith('application.')) {
+    return applicationAdmin(req, actor, action as ApplicationAction, audit, id);
+  }
   if (action === 'key.list') {
     const keys = await prisma.managedKey.findMany({
       where: { workspaceId },
@@ -351,16 +311,18 @@ export async function adminRequest(
 ): Promise<Response> {
   try {
     requireService(req);
-    if (['key.rotate', 'key.disable', 'credential.revoke'].includes(action) && !rawId) {
+    const targeted = ['key.rotate', 'key.disable', 'credential.revoke', 'application.revoke'];
+    if (targeted.includes(action) && !rawId) {
       throw new ManagedKeyError(400, 'Invalid identifier.');
     }
     const id = rawId ? parseId(rawId) : undefined;
     const actor = await admin(req, workspaceSlug);
     throttle(actor.userId);
-    const audit = {
+    const audit: Audit = {
       ...actor,
       keyId: action.startsWith('key.') ? id : undefined,
       targetCredentialId: action === 'credential.revoke' ? id : undefined,
+      applicationId: action === 'application.revoke' ? id : undefined,
       operation: action,
     };
     return await audited(audit, () => performAdmin(req, actor, action, audit, id));

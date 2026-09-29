@@ -98,6 +98,10 @@ const serverEnvSchema = z.object({
   MANAGED_KEYS_TRUST_PROXY: z
     .preprocess(blankToUndefined, z.enum(['true', 'false']).default('false'))
     .transform((v) => v === 'true'),
+  // The audience Vercel OIDC tokens of managed-key applications must carry.
+  // Defaults to the origin of NEXT_PUBLIC_APP_URL (e.g. https://www.envstore.xyz).
+  MANAGED_KEYS_AUDIENCE: optionalUrl,
+  NEXT_PUBLIC_APP_URL: optionalUrl,
 
   // Number of trusted proxy hops between the public internet and this
   // process. Rate limiters key on the client IP, which we extract from

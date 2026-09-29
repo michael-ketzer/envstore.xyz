@@ -160,6 +160,7 @@ model Workspace {
   managedKeys           ManagedKey[]
   managedKeyCredentials ManagedKeyCredential[]
   managedKeyAuditEvents ManagedKeyAuditEvent[]
+  managedKeyApplications ManagedKeyApplication[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -537,14 +538,42 @@ model ManagedKeyGrant {
   @@index([keyId])
 }
 
+// A multi-tenant backend acting for every tenant of one purpose and
+// environment. It authenticates as a Vercel deployment (OIDC) or with one
+// static token, never both (database check). Tenant keys are created on first
+// use, up to maxTenants.
+model ManagedKeyApplication {
+  id                String    @id @default(uuid())
+  workspaceId       String
+  name              String
+  environment       String
+  purpose           String
+  keyName           String
+  maxTenants        Int
+  vercelTeamId      String?
+  vercelProjectId   String?
+  vercelEnvironment String?
+  tokenHash         String?   @unique
+  expiresAt         DateTime?
+  revokedAt         DateTime?
+  createdByUserId   String
+  createdAt         DateTime  @default(now())
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, vercelProjectId, vercelEnvironment], map: "ManagedKeyApplication_vercel_identity_idx")
+}
+
 // Deliberately no free-form metadata, context, request body, or key material.
 // Actor IDs survive revocation/offboarding. Unknown callers have null IDs.
+// applicationId is the acting application, or the target of an admin action.
 model ManagedKeyAuditEvent {
   id                 String     @id @default(uuid())
   workspaceId        String?
   userId             String?
   credentialId       String?
   targetCredentialId String?
+  applicationId      String?
   keyId              String?
   operation          String
   outcome            String

@@ -10,6 +10,7 @@ import {
   PROVIDER,
   VERSION,
   credentialSchema,
+  contextTenantId,
   generateSchema,
   provisionSchema,
   unwrapSchema,
@@ -53,7 +54,7 @@ function authorize(
     key.workspaceId !== credential.workspaceId ||
     key.tenantId !== credential.tenantId ||
     key.environment !== credential.environment ||
-    key.tenantId !== context.teamId ||
+    key.tenantId !== contextTenantId(context) ||
     key.purpose !== context.purpose
   ) {
     throw new ManagedKeyError(403, 'Key or context is not authorized.');
@@ -180,7 +181,8 @@ async function performAdmin(
 ): Promise<Response> {
   const { workspaceId, userId } = actor;
   if (action.startsWith('application.')) {
-    return applicationAdmin(req, actor, action as ApplicationAction, audit, id);
+    const body = action === 'application.register' ? await requestJson(req) : undefined;
+    return applicationAdmin(body, actor, action as ApplicationAction, audit, id);
   }
   if (action === 'key.list') {
     const keys = await prisma.managedKey.findMany({

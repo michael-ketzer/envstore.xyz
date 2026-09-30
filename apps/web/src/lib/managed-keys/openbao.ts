@@ -41,7 +41,7 @@ function binding(key: KeyBinding, context: BindingContext): string {
   // Include server-authorized isolation fields and sort every context entry.
   return Buffer.from(
     JSON.stringify([
-      'envstore-managed-key-v1',
+      'tenantId' in context ? 'envstore-managed-key-v2' : 'envstore-managed-key-v1',
       key.workspaceId,
       key.id,
       key.tenantId,

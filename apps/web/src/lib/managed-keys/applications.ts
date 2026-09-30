@@ -8,6 +8,7 @@ import {
   VERSION,
   applicationSchema,
   applicationUnwrapSchema,
+  contextTenantId,
   generateSchema,
   type BindingContext,
   type Operation,
@@ -106,7 +107,7 @@ function authorizeKey(
     key.name !== application.keyName ||
     key.purpose !== application.purpose ||
     key.purpose !== context.purpose ||
-    key.tenantId !== context.teamId
+    key.tenantId !== contextTenantId(context)
   ) {
     throw forbidden();
   }
@@ -173,7 +174,7 @@ async function tenantKey(application: Application, tenantId: string): Promise<Ma
 
 /**
  * Data keys for a registered application, authenticated as a Vercel deployment
- * (OIDC) or with a static `esma_` token. The tenant comes from `context.teamId`.
+ * (OIDC) or with a static `esma_` token. The tenant comes from the context.
  */
 export async function applicationRequest(
   req: Request,
@@ -214,12 +215,13 @@ export async function applicationRequest(
       audit.workspaceId = application.workspaceId;
       audit.applicationId = application.id;
       authorizeApplication(application, workspaceSlug, context);
-      throttle(`application:${application.id}:${context.teamId}`);
+      const tenantId = contextTenantId(context);
+      throttle(`application:${application.id}:${tenantId}`);
       const key = stored
         ? await prisma.managedKey.findFirst({
             where: { id: stored.keyId, workspaceId: application.workspaceId },
           })
-        : await tenantKey(application, context.teamId);
+        : await tenantKey(application, tenantId);
       audit.keyId = key?.id;
       authorizeKey(application, key, context);
       const material = stored
@@ -254,9 +256,18 @@ const select = {
   createdAt: true,
 } as const;
 
+export async function listApplications(workspaceId: string) {
+  return prisma.managedKeyApplication.findMany({
+    where: { workspaceId },
+    select,
+    orderBy: { createdAt: 'desc' },
+    take: 1000,
+  });
+}
+
 /** Workspace administrator actions, dispatched from the admin API. */
 export async function applicationAdmin(
-  req: Request,
+  body: unknown,
   actor: { workspaceId: string; userId: string },
   action: ApplicationAction,
   audit: Audit,
@@ -264,12 +275,7 @@ export async function applicationAdmin(
 ): Promise<Response> {
   const { workspaceId, userId } = actor;
   if (action === 'application.list') {
-    const applications = await prisma.managedKeyApplication.findMany({
-      where: { workspaceId },
-      select,
-      orderBy: { createdAt: 'desc' },
-      take: 1000,
-    });
+    const applications = await listApplications(workspaceId);
     return json({ applications });
   }
   if (action === 'application.revoke') {
@@ -283,7 +289,7 @@ export async function applicationAdmin(
     });
     return json({ id: application.id, revoked: true });
   }
-  const input = applicationSchema.safeParse(await requestJson(req));
+  const input = applicationSchema.safeParse(body);
   if (!input.success) throw new ManagedKeyError(400, 'Invalid application request.');
   const { vercel, token, ...scope } = input.data;
   const existing = await prisma.managedKeyApplication.findUnique({

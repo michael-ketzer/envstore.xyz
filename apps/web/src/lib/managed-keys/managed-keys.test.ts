@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHash } from 'node:crypto';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { FakePrismaKnownError, makeDbMock } from '@/test/db-mock';
 import { makeEnvMock } from '@/test/env-mock';
@@ -32,7 +33,7 @@ const db = {
   managedKeyAuditEvent: { create: mock(), update: mock(), findFirst: mock(), findMany: mock() },
   cliToken: { findUnique: mock(), update: mock() },
   workspace: { findFirst: mock() },
-  workspaceMember: { findUnique: mock() },
+  workspaceMember: { findUnique: mock(), findFirst: mock() },
   // Interactive transactions run against the same mocks; $executeRaw takes locks.
   $transaction: mock(),
   $executeRaw: mock(),
@@ -47,9 +48,13 @@ const config = {
   NEXT_PUBLIC_APP_URL: 'https://envstore.test',
 };
 const flags = { managedKeys: true };
+const requireSession = mock();
+const revalidatePath = mock();
 mock.module('server-only', () => ({}));
 mock.module('@envstore/db', () => makeDbMock({ prisma: db }));
 mock.module('@/env', () => makeEnvMock({ env: config, features: flags }));
+mock.module('@/lib/auth-helpers', () => ({ requireSession }));
+mock.module('next/cache', () => ({ revalidatePath }));
 const { runtimeRequest, adminRequest } = await import('./service');
 const engine = await import('./openbao');
 const { readJson } = await import('./http');
@@ -59,6 +64,11 @@ const { POST: appGenerateRoute } =
   await import('@/app/api/v1/workspaces/[workspaceSlug]/data-keys/route');
 const { POST: appUnwrapRoute } =
   await import('@/app/api/v1/workspaces/[workspaceSlug]/data-keys/unwrap/route');
+const { createApplicationAction, revokeApplicationAction } =
+  await import('@/app/dashboard/[workspaceSlug]/settings/applications/actions');
+const ApplicationsPage = (
+  await import('@/app/dashboard/[workspaceSlug]/settings/applications/page')
+).default;
 const keyId = '6fd445c3-a7b2-48ea-93da-644a4c4b96a1';
 const credentialId = '9dbcb9e1-7458-48a7-9dcc-b610e7e9c8b8';
 const token = `esmk_${'a'.repeat(43)}`;
@@ -131,6 +141,8 @@ beforeEach(() => {
   }
   db.$transaction.mockImplementation(async (work: (tx: typeof db) => unknown) => work(db));
   db.$executeRaw.mockResolvedValue(0);
+  requireSession.mockReset().mockResolvedValue({ user: { id: 'user-1' } });
+  revalidatePath.mockReset();
   Object.assign(config, {
     OPENBAO_URL: 'https://bao.test',
     MANAGED_KEYS_TRUST_PROXY: false,
@@ -158,6 +170,11 @@ beforeEach(() => {
   db.cliToken.update.mockResolvedValue({});
   db.workspace.findFirst.mockResolvedValue({ id: 'ws-1' });
   db.workspaceMember.findUnique.mockResolvedValue({ role: 'ADMIN' });
+  db.workspaceMember.findFirst.mockResolvedValue({
+    workspaceId: 'ws-1',
+    role: 'ADMIN',
+    workspace: { id: 'ws-1', slug: 'workspace', name: 'Workspace' },
+  });
   db.managedKey.findFirst.mockResolvedValue({ ...key });
   db.managedKey.findMany.mockResolvedValue([{ ...key }]);
   db.managedKey.upsert.mockResolvedValue({ ...key, provisionedAt: null });
@@ -320,6 +337,53 @@ describe('managed-key runtime', () => {
 });
 
 describe('OpenBao boundary', () => {
+  test('preserves the exact legacy derivation context for stored envelopes', async () => {
+    await engine.generateDataKey(key, context);
+    const encoded = JSON.parse(backend.mock.calls[0]![1].body).context;
+    expect(JSON.parse(Buffer.from(encoded, 'base64').toString())).toEqual([
+      'envstore-managed-key-v1',
+      'ws-1',
+      keyId,
+      'team-1',
+      'production',
+      context.purpose,
+      [
+        ['accessId', 'assignment-1'],
+        ['campaignId', 'campaign-1'],
+        ['creatorId', 'creator-1'],
+        ['purpose', 'shinra-creator-briefing-v1'],
+        ['teamId', 'team-1'],
+      ],
+    ]);
+  });
+  test('generic contexts use a separate namespace and bind subject without translating fields', async () => {
+    const generic = { purpose: context.purpose, tenantId: key.tenantId, subjectId: 'umk:1' };
+    await engine.generateDataKey(key, generic);
+    const encoded = JSON.parse(backend.mock.calls[0]![1].body).context;
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64').toString());
+    expect(decoded).toEqual([
+      'envstore-managed-key-v2',
+      'ws-1',
+      keyId,
+      'team-1',
+      'production',
+      context.purpose,
+      [
+        ['purpose', context.purpose],
+        ['subjectId', 'umk:1'],
+        ['tenantId', 'team-1'],
+      ],
+    ]);
+    await engine.generateDataKey(
+      key,
+      Object.fromEntries(Object.entries(generic).reverse()) as BindingContext,
+    );
+    expect(JSON.parse(backend.mock.calls.at(-1)![1].body).context).toBe(encoded);
+    await engine.generateDataKey(key, { ...generic, subjectId: 'umk:2' });
+    expect(JSON.parse(backend.mock.calls.at(-1)![1].body).context).not.toBe(encoded);
+    await engine.generateDataKey(key, { purpose: generic.purpose, tenantId: generic.tenantId });
+    expect(JSON.parse(backend.mock.calls.at(-1)![1].body).context).not.toBe(encoded);
+  });
   test('canonicalizes context order and keeps every binding field', async () => {
     await engine.generateDataKey(key, context);
     await engine.generateDataKey(
@@ -744,6 +808,92 @@ describe('applications', () => {
     }
   });
 
+  test('Vetdocs generates its first user master key and unwraps the native generic context', async () => {
+    const userId = '0199a0e0-0000-7000-8000-000000000001';
+    const generic = { purpose: 'vetdocs-umk-v1', tenantId: userId, subjectId: 'umk:1' };
+    application = { ...application, purpose: generic.purpose, keyName: 'umk' };
+    stored = { ...key, purpose: generic.purpose, tenantId: userId, name: 'umk' };
+    db.managedKey.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockImplementation(async () => stored);
+    db.managedKey.upsert.mockResolvedValue({ ...stored, provisionedAt: null });
+    const generated = await appGenerateRoute(...appReq(appToken, { context: generic }));
+    expect(generated.status).toBe(200);
+    expect((await generated.json()).keyId).toBe(keyId);
+    expect(db.managedKey.upsert.mock.calls[0]![0].create).toMatchObject({
+      tenantId: userId,
+      purpose: 'vetdocs-umk-v1',
+      name: 'umk',
+      environment: 'production',
+    });
+    const generatedBinding = JSON.parse(
+      backend.mock.calls.find(([url]) => String(url).includes('/datakey/'))![1].body,
+    ).context;
+    backend.mockImplementation(async (_url, options) => {
+      const matches = JSON.parse(options.body).context === generatedBinding;
+      return matches ? response({ data: { plaintext } }) : response({}, 400);
+    });
+    const unwrapped = await appUnwrapRoute(
+      ...appReq(appToken, { context: generic, keyId, wrappedKey }),
+    );
+    expect(unwrapped.status).toBe(200);
+    expect((await unwrapped.json()).plaintextKey).toBe(plaintext);
+    const changedSubject = { ...generic, subjectId: 'umk:2' };
+    expect(
+      (await appUnwrapRoute(...appReq(appToken, { context: changedSubject, keyId, wrappedKey })))
+        .status,
+    ).toBe(400);
+    const changedTenant = { ...generic, tenantId: 'another-user' };
+    expect(
+      (await appUnwrapRoute(...appReq(appToken, { context: changedTenant, keyId, wrappedKey })))
+        .status,
+    ).toBe(403);
+    const audit = JSON.stringify(db.managedKeyAuditEvent.create.mock.calls);
+    expect(audit).not.toContain(generic.subjectId);
+    expect(audit).not.toContain(plaintext);
+  });
+
+  test('rejects mixed context formats, extra data, and malformed generic identifiers', async () => {
+    const generic = { purpose: context.purpose, tenantId: key.tenantId, subjectId: 'umk:1' };
+    for (const invalid of [
+      { ...generic, teamId: key.tenantId },
+      { ...context, tenantId: key.tenantId },
+      { ...generic, document: 'private document' },
+      { ...generic, tenantId: '' },
+      { ...generic, subjectId: 'a user name' },
+      { ...generic, subjectId: 'x'.repeat(129) },
+    ]) {
+      expect((await appGenerateRoute(...appReq(appToken, { context: invalid }))).status).toBe(400);
+    }
+    expect(backend).not.toHaveBeenCalled();
+    expect(db.managedKey.upsert).not.toHaveBeenCalled();
+    expect(
+      (
+        await appGenerateRoute(
+          ...appReq(appToken, { context: { purpose: context.purpose, tenantId: key.tenantId } }),
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  test('two applications in the same scope share existing tenant keys', async () => {
+    const generic = { purpose: context.purpose, tenantId: key.tenantId, subjectId: 'umk:1' };
+    expect((await appGenerateRoute(...appReq(appToken, { context: generic }))).status).toBe(200);
+    application = { ...application, id: credentialId, name: 'keybroker' };
+    const otherToken = `esma_${'c'.repeat(43)}`;
+    const unwrapped = await appUnwrapRoute(
+      ...appReq(otherToken, { context: generic, keyId, wrappedKey }),
+    );
+    expect(unwrapped.status).toBe(200);
+    expect((await unwrapped.json()).keyId).toBe(keyId);
+    expect(db.managedKey.upsert).not.toHaveBeenCalled();
+    expect(db.managedKey.count).not.toHaveBeenCalled();
+    expect(db.managedKeyAuditEvent.create.mock.calls.at(-1)![0].data.applicationId).toBe(
+      credentialId,
+    );
+  });
+
   test('registers Vercel deployments idempotently and static tokens once', async () => {
     const vercel = { teamId: 'team_abc', projectId: 'prj_def', environment: 'production' };
     const input = {
@@ -852,5 +1002,265 @@ describe('applications', () => {
     const listed = db.managedKeyApplication.findMany.mock.calls.at(-1)![0];
     expect(listed.select.tokenHash).toBeUndefined();
     expect(listed.where).toEqual({ workspaceId: 'ws-1' });
+  });
+});
+
+describe('dashboard encryption applications', () => {
+  const applicationId = 'c3f7a1a2-8f55-4f0e-9a51-2f7f5d1f0a11';
+  function form(values: Record<string, string> = {}) {
+    const body = new FormData();
+    for (const [name, value] of Object.entries({
+      name: 'vetdocs-production',
+      environment: 'production',
+      purpose: 'vetdocs-umk-v1',
+      keyName: 'umk',
+      maxTenants: '1000',
+      authMode: 'token',
+      expiresInDays: '90',
+      ...values,
+    }))
+      body.set(name, value);
+    return body;
+  }
+  beforeEach(() => {
+    db.managedKeyApplication.findUnique.mockResolvedValue(null);
+    db.managedKeyApplication.findFirst.mockResolvedValue(null);
+    db.managedKeyApplication.create.mockImplementation(async ({ data }) => ({
+      id: applicationId,
+      ...data,
+    }));
+  });
+
+  test('the page uses the actual workspace slug and lists metadata without token hashes', async () => {
+    db.managedKeyApplication.findMany.mockResolvedValue([
+      {
+        id: applicationId,
+        name: 'vetdocs-production',
+        environment: 'production',
+        purpose: 'vetdocs-umk-v1',
+        keyName: 'umk',
+        maxTenants: 1000,
+        expiresAt: new Date(Date.now() + 86400000),
+        revokedAt: null,
+        vercelProjectId: null,
+        tokenHash: 'must-never-be-rendered',
+      },
+    ]);
+    const html = renderToStaticMarkup(
+      await ApplicationsPage({ params: Promise.resolve({ workspaceSlug: 'me' }) }),
+    );
+    expect(html).toContain('Encryption applications');
+    expect(html).toContain('vetdocs-umk-v1');
+    expect(html).toContain('/api/v1/workspaces/workspace/data-keys');
+    expect(html).not.toContain('/api/v1/workspaces/me/data-keys');
+    expect(html).not.toContain('must-never-be-rendered');
+    expect(db.managedKeyApplication.findMany.mock.calls[0]![0]).toMatchObject({
+      where: { workspaceId: 'ws-1' },
+    });
+    expect(db.managedKeyApplication.findMany.mock.calls[0]![0].select.tokenHash).toBeUndefined();
+  });
+
+  test('the page gates members and explains an unconfigured service without listing applications', async () => {
+    db.workspaceMember.findFirst.mockResolvedValue({ workspaceId: 'ws-1', role: 'MEMBER' });
+    await expect(
+      ApplicationsPage({ params: Promise.resolve({ workspaceSlug: 'workspace' }) }),
+    ).rejects.toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
+    expect(db.managedKeyApplication.findMany).not.toHaveBeenCalled();
+    db.workspaceMember.findFirst.mockResolvedValue({
+      workspaceId: 'ws-1',
+      role: 'ADMIN',
+      workspace: { id: 'ws-1', slug: 'workspace', name: 'Workspace' },
+    });
+    flags.managedKeys = false;
+    const html = renderToStaticMarkup(
+      await ApplicationsPage({ params: Promise.resolve({ workspaceSlug: 'workspace' }) }),
+    );
+    expect(html).toContain('Application encryption is not configured');
+    expect(html).not.toContain('Register application');
+    expect(db.managedKeyApplication.findMany).not.toHaveBeenCalled();
+  });
+
+  test.each(['OWNER', 'ADMIN'])(
+    '%s can register a token with durable auditing and no stored bearer',
+    async (role) => {
+      db.workspaceMember.findFirst.mockResolvedValue({ workspaceId: 'ws-1', role });
+      const result = await createApplicationAction('workspace', { error: null }, form());
+      expect(result.error).toBeNull();
+      const token = result.created!.token!;
+      expect(token).toMatch(/^esma_[A-Za-z0-9_-]{43}$/);
+      const saved = db.managedKeyApplication.create.mock.calls[0]![0].data;
+      expect(saved).toMatchObject({
+        workspaceId: 'ws-1',
+        createdByUserId: 'user-1',
+        purpose: 'vetdocs-umk-v1',
+        keyName: 'umk',
+      });
+      expect(saved.tokenHash).toBe(createHash('sha256').update(token).digest('hex'));
+      expect(JSON.stringify(saved)).not.toContain(token);
+      expect(JSON.stringify(result)).not.toContain(saved.tokenHash);
+      expect(db.managedKeyAuditEvent.create.mock.calls[0]![0].data).toMatchObject({
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        operation: 'application.register',
+        outcome: 'attempted',
+      });
+      expect(db.managedKeyAuditEvent.update.mock.calls[0]![0].data).toMatchObject({
+        applicationId,
+        outcome: 'success',
+      });
+      expect(JSON.stringify(db.managedKeyAuditEvent.update.mock.calls)).not.toContain(token);
+      expect(revalidatePath).toHaveBeenCalledWith('/dashboard/workspace/settings/applications');
+    },
+  );
+
+  test.each(['MEMBER', 'non-member', 'deleted-workspace'])(
+    'denies %s on creation and revocation',
+    async (role) => {
+      db.workspaceMember.findFirst.mockResolvedValue(
+        role === 'MEMBER' ? { workspaceId: 'ws-1', role } : null,
+      );
+      expect((await createApplicationAction('workspace', { error: null }, form())).error).toContain(
+        'Only workspace admins',
+      );
+      expect(
+        (
+          await revokeApplicationAction(
+            'workspace',
+            applicationId,
+            { error: null, revoked: false },
+            new FormData(),
+          )
+        ).error,
+      ).toContain('Only workspace admins');
+      expect(db.managedKeyApplication.create).not.toHaveBeenCalled();
+      expect(db.managedKeyApplication.update).not.toHaveBeenCalled();
+      expect(db.managedKeyAuditEvent.create).not.toHaveBeenCalled();
+    },
+  );
+
+  test('requires a human session before any mutation', async () => {
+    requireSession.mockRejectedValue(new Error('login-required'));
+    await expect(createApplicationAction('workspace', { error: null }, form())).rejects.toThrow(
+      'login-required',
+    );
+    await expect(
+      revokeApplicationAction(
+        'workspace',
+        applicationId,
+        { error: null, revoked: false },
+        new FormData(),
+      ),
+    ).rejects.toThrow('login-required');
+    expect(db.workspaceMember.findFirst).not.toHaveBeenCalled();
+    expect(db.managedKeyApplication.create).not.toHaveBeenCalled();
+  });
+
+  test('supports the personal workspace alias but scopes mutations to the resolved workspace', async () => {
+    await createApplicationAction('me', { error: null }, form());
+    expect(db.workspaceMember.findFirst.mock.calls[0]![0].where).toEqual({
+      userId: 'user-1',
+      workspace: { ownerId: 'user-1', type: 'PERSONAL', deletedAt: null },
+    });
+    expect(db.managedKeyApplication.create.mock.calls[0]![0].data.workspaceId).toBe('ws-1');
+  });
+
+  test('registers Vercel identities without issuing a static token', async () => {
+    const result = await createApplicationAction(
+      'workspace',
+      { error: null },
+      form({
+        authMode: 'vercel',
+        vercelTeamId: 'team_abc',
+        vercelProjectId: 'prj_def',
+        vercelEnvironment: 'preview',
+      }),
+    );
+    expect(result.created).toEqual({ name: 'vetdocs-production', authMode: 'vercel' });
+    const saved = db.managedKeyApplication.create.mock.calls[0]![0].data;
+    expect(saved).toMatchObject({
+      vercelTeamId: 'team_abc',
+      vercelProjectId: 'prj_def',
+      vercelEnvironment: 'preview',
+    });
+    expect(saved.tokenHash).toBeUndefined();
+  });
+
+  test('rejects invalid registration and unavailable service without a mutation', async () => {
+    for (const values of [
+      { name: 'has spaces' },
+      { maxTenants: '0' },
+      { maxTenants: '100001' },
+      { expiresInDays: '366' },
+      { authMode: 'other' },
+      {
+        authMode: 'vercel',
+        vercelTeamId: 'a name',
+        vercelProjectId: 'prj_def',
+        vercelEnvironment: 'preview',
+      },
+    ]) {
+      expect(
+        (await createApplicationAction('workspace', { error: null }, form(values))).error,
+      ).not.toBeNull();
+    }
+    flags.managedKeys = false;
+    expect((await createApplicationAction('workspace', { error: null }, form())).error).toContain(
+      'not configured',
+    );
+    expect(db.managedKeyApplication.create).not.toHaveBeenCalled();
+  });
+
+  test('scopes and audits revocation; invalid and foreign application IDs cannot mutate', async () => {
+    db.managedKeyApplication.findFirst.mockResolvedValue({ id: applicationId, revokedAt: null });
+    db.managedKeyApplication.update.mockResolvedValue({});
+    const result = await revokeApplicationAction(
+      'workspace',
+      applicationId,
+      { error: null, revoked: false },
+      new FormData(),
+    );
+    expect(result).toEqual({ error: null, revoked: true });
+    expect(db.managedKeyApplication.findFirst.mock.calls[0]![0].where).toEqual({
+      id: applicationId,
+      workspaceId: 'ws-1',
+    });
+    expect(db.managedKeyAuditEvent.create.mock.calls[0]![0].data).toMatchObject({
+      applicationId,
+      operation: 'application.revoke',
+    });
+    db.managedKeyApplication.findFirst.mockResolvedValue(null);
+    const foreign = await revokeApplicationAction(
+      'workspace',
+      credentialId,
+      { error: null, revoked: false },
+      new FormData(),
+    );
+    expect(foreign.error).toBe('Application not found.');
+    const invalid = await revokeApplicationAction(
+      'workspace',
+      'invalid',
+      { error: null, revoked: false },
+      new FormData(),
+    );
+    expect(invalid.error).toBe('Invalid identifier.');
+    expect(db.managedKeyApplication.update).toHaveBeenCalledTimes(1);
+  });
+
+  test('never echoes previous tokens or internal diagnostics on failure', async () => {
+    db.managedKeyApplication.create.mockRejectedValue(
+      new Error(`private database failure ${plaintext}`),
+    );
+    const result = await createApplicationAction(
+      'workspace',
+      { error: null, created: { name: 'previous', authMode: 'token', token: 'esma_previous' } },
+      form(),
+    );
+    expect(result.created).toBeUndefined();
+    expect(result.error).toBe(
+      'Application encryption is temporarily unavailable. Please try again.',
+    );
+    expect(JSON.stringify(result)).not.toContain(plaintext);
+    expect(JSON.stringify(result)).not.toContain('esma_previous');
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

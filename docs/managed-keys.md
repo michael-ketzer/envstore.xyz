@@ -1,8 +1,10 @@
 # Managed keys
 
-Envstore's optional, API-only managed-key service uses OpenBao Transit. It serves
-backend applications; there is no browser key setup, recipient registration, or
-new dashboard. It is disabled until all OpenBao settings are configured.
+Envstore's optional managed-key service uses OpenBao Transit. It serves backend
+applications and is disabled until all OpenBao settings are configured. Workspace
+owners and admins register applications from the dashboard's **Encryption** page
+or through the administration API. Data-key generation and unwrap remain backend
+API operations; no plaintext encryption keys are delivered to the dashboard.
 
 This is **not zero-knowledge storage**: envstore and OpenBao have authority to
 unwrap data keys. The existing age-encrypted `.env` service retains its separate
@@ -52,18 +54,34 @@ key ID, provider, and envelope version. Briefing bodies never enter this API.
 Send the same `context` plus `wrappedKey`. The response has `provider`, `version`,
 `keyId`, and `plaintextKey` with the same encodings as generation.
 
-Context has exactly purpose, teamId, campaignId, creatorId, and one of `accessId`
-or `assignmentId`. Shinra's current provider uses `accessId`; `assignmentId` is
-available to new integrations. These names are distinct cryptographic bindings:
-you cannot rename a field on existing ciphertext. Field order does not matter.
+New integrations can use generic context v2:
+
+```json
+{
+  "purpose": "vetdocs-umk-v1",
+  "tenantId": "0199a0e0-0000-7000-8000-000000000001",
+  "subjectId": "umk:1"
+}
+```
+
+`purpose` and `tenantId` are required; `subjectId` is optional. Vetdocs uses its
+user ID as the tenant and `umk:<version>` as the subject. The original context v1
+has exactly purpose, teamId, campaignId, creatorId, and one of `accessId` or
+`assignmentId`. Shinra's provider uses `accessId`. Both formats are strict: extra
+fields and mixed v1/v2 fields are rejected. These names are distinct cryptographic
+bindings: you cannot rename a field on existing ciphertext. Field order does not matter.
 Identifiers are 1–128 ASCII letters, numbers, periods, underscores, colons, or
 hyphens, beginning with a letter or number. They must never contain names or
 briefing text. All extra fields are rejected.
 
-The team ID must equal the administrator-provisioned tenant ID, and the purpose
+The context's tenant ID (`tenantId` in v2, `teamId` in v1) must equal the
+administrator-provisioned tenant ID, and the purpose
 must equal the key's immutable purpose. Envstore additionally binds the workspace,
-key ID, tenant, and environment into Transit derivation context. A caller-supplied
-team ID alone grants nothing. Changing any binding makes unwrap fail.
+key ID, tenant, and environment into Transit derivation context. Generic contexts
+use the `envstore-managed-key-v2` derivation namespace; legacy contexts retain
+their exact v1 derivation bytes. The response provider, envelope version `1`, and
+`esmk1.openbao.…` wrapped-key format are unchanged. A caller-supplied tenant ID
+alone grants nothing. Changing any binding makes unwrap fail.
 
 Requests and engine responses are limited to 16 KiB; engine calls and body reads
 have five-second timeouts. Error bodies never include upstream diagnostics.
@@ -95,7 +113,8 @@ holding one credential per tenant. An application:
   to the token's immutable team ID (`owner_id`), project ID (`project_id`), and
   deployment environment (`environment`) claims, never to renameable names.
 - **Acts for every tenant** of one key `purpose` in one envstore `environment`,
-  using keys named `keyName`. The tenant is `context.teamId`.
+  using keys named `keyName`. The tenant is `context.tenantId` for generic contexts
+  and `context.teamId` for legacy contexts.
 - **Creates a tenant's key on first use.** `generate` provisions a missing key
   with the same fixed Transit settings as administrator provisioning, up to
   `maxTenants` keys per environment and key name. It never replaces, re-enables,
@@ -143,6 +162,33 @@ and global issuer modes both work.
 
 ### Registering applications
 
+In the dashboard, open a workspace and select **Encryption**
+(`/dashboard/{workspaceSlug}/settings/applications`). Owners and admins can
+register applications, see their scope and expiry, and revoke access. Static
+tokens are shown once after registration and never appear in the application
+list. The Vetdocs preset fills in `purpose=vetdocs-umk-v1` and `keyName=umk`.
+
+For Vetdocs' current token adapter, select **Application token** and save the
+configuration shown after registration in its backend environment secrets:
+
+```sh
+KEY_PROVIDER=envstore
+ENVSTORE_URL=https://www.envstore.xyz
+ENVSTORE_WORKSPACE=<actual-workspace-slug>
+ENVSTORE_TOKEN=<esma-token-shown-once>
+```
+
+`ENVSTORE_WORKSPACE` is the workspace's actual slug; the dashboard resolves the
+personal-workspace URL alias `me` before producing this configuration. Register
+separate applications for production, staging, and development. Vetdocs' current
+adapter reads a static token; using Vercel OIDC also requires an OIDC-aware adapter.
+
+Vetdocs' current `Keyring` defaults to `localEscrow`, a filesystem store restricted
+to explicit local development. Its hosted first-user provisioning also needs an
+external durable `EscrowStore` and `ESCROW_RECIPIENT` configured in Vetdocs. Setting
+the four envstore variables above connects its key provider; it does not configure
+that separate escrow store.
+
 Workspace administrators (see [Administration](#administration)) register with
 `POST /api/v1/workspaces/{workspaceSlug}/managed-keys/applications`:
 
@@ -168,9 +214,16 @@ idempotent and may change only `maxTenants`; any other change conflicts (revoke
 and register a new name). A deployment has at most one active application per
 purpose.
 
+Applications with the same workspace, environment, `keyName`, and purpose share
+the same tenant keys, allowing a web backend and a Worker to unwrap the same
+envelopes with separate credentials. `maxTenants` counts the whole key space
+(workspace, environment, key name), so use the same limit for such applications.
+
 ## Administration
 
-Use a **human CLI bearer token** belonging to an OWNER or ADMIN in the workspace.
+Use a **human CLI bearer token** belonging to an OWNER or ADMIN in the workspace
+for the administration API. The dashboard uses the signed-in human session with
+the same role gate and durable managed-key auditing for registration and revocation.
 Application credentials and tokens, Vercel deployments, and recipient-based
 workspace credentials cannot administer keys or mint credentials. The base path is
 `/api/v1/workspaces/{workspaceSlug}/managed-keys`.

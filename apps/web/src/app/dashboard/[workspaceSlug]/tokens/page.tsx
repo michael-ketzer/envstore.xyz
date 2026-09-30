@@ -56,6 +56,16 @@ export default async function TokensPage({
           ciphertext). Both are generated on YOUR machine when you mint the token — the server
           never sees the private key.
         </p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Connecting a backend such as Vetdocs to managed encryption?{' '}
+          <Link
+            href={`/dashboard/${workspaceSlug}/settings/applications`}
+            className="text-foreground underline"
+          >
+            Register an encryption application
+          </Link>
+          .
+        </p>
       </header>
 
       <section className="rounded-md border border-border bg-muted/30 p-5">

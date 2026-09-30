@@ -7,7 +7,7 @@ export const identifier = z
   .max(128)
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/);
 export const keyIdSchema = z.uuid();
-export const contextSchema = z
+export const legacyContextSchema = z
   .object({
     purpose: identifier,
     teamId: identifier,
@@ -19,6 +19,16 @@ export const contextSchema = z
   })
   .strict()
   .refine((v) => Boolean(v.assignmentId) !== Boolean(v.accessId));
+export const genericContextSchema = z
+  .object({
+    purpose: identifier,
+    tenantId: identifier,
+    subjectId: identifier.optional(),
+  })
+  .strict();
+// Keep each wire format intact: field names are cryptographic bindings, so a
+// generic context must never be translated into the legacy briefing fields.
+export const contextSchema = z.union([legacyContextSchema, genericContextSchema]);
 export const generateSchema = z.object({ context: contextSchema }).strict();
 export const unwrapSchema = generateSchema.extend({
   wrappedKey: z.string().min(1).max(4096),
@@ -82,6 +92,9 @@ export const applicationSchema = z
   .strict()
   .refine((v) => Boolean(v.vercel) !== Boolean(v.token));
 export type BindingContext = z.infer<typeof contextSchema>;
+export function contextTenantId(context: BindingContext): string {
+  return 'tenantId' in context ? context.tenantId : context.teamId;
+}
 export type Operation = 'generate' | 'unwrap';
 export const PROVIDER = 'envstore-openbao-transit' as const;
 export const VERSION = 1 as const;

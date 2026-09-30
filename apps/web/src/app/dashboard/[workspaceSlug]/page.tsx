@@ -76,7 +76,7 @@ export default async function WorkspacePage({
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{ws.description}</p>
           ) : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {!isPersonal ? (
             <Link
               href={`/dashboard/${urlSlug}/members`}
@@ -96,6 +96,12 @@ export default async function WorkspacePage({
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
             Tokens
+          </Link>
+          <Link
+            href={`/dashboard/${urlSlug}/settings/applications`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            Encryption
           </Link>
           <Link
             href={`/dashboard/${urlSlug}/audit`}

@@ -9,14 +9,16 @@ type MockFn = (...args: unknown[]) => unknown;
 export type EmailMockOverrides = Partial<{
   sendOtpEmail: MockFn;
   sendInviteEmail: MockFn;
+  sendEmail: MockFn;
+  getInboundEmail: MockFn;
 }>;
 
-export function makeEmailMock(
-  overrides: EmailMockOverrides = {},
-): Record<string, unknown> {
+export function makeEmailMock(overrides: EmailMockOverrides = {}): Record<string, unknown> {
   const noop = async () => undefined;
   return {
     sendOtpEmail: overrides.sendOtpEmail ?? noop,
     sendInviteEmail: overrides.sendInviteEmail ?? noop,
+    sendEmail: overrides.sendEmail ?? noop,
+    getInboundEmail: overrides.getInboundEmail ?? noop,
   };
 }

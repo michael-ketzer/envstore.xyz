@@ -5,6 +5,8 @@ is for going deeper.
 
 ## Start here
 
+- **[email.md](email.md)** — Letterpier sending, inbound forwarding, DNS, secrets,
+  webhook provisioning, and release/rollback checks.
 - **[managed-keys.md](managed-keys.md)** — optional application key API, OpenBao
   setup, administration, isolation, and the separate trust model.
 - **[openbao-operations.md](openbao-operations.md)** — hosted media-server service,

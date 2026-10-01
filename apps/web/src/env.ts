@@ -30,18 +30,18 @@ const serverEnvSchema = z.object({
   AUTH_GOOGLE_ID: optionalString,
   AUTH_GOOGLE_SECRET: optionalString,
 
-  // Email
-  RESEND_API_KEY: optionalString,
-  // Resend accepts both bare addresses and `Display Name <addr@host>` format,
-  // so we validate as a non-empty string and let Resend reject malformed values
-  // at send time.
-  RESEND_FROM: optionalString,
-  // Inbound email forwarding. Resend sends `email.received` webhooks (Svix-
-  // signed) when mail hits any address on our domain (legal@, privacy@, etc.).
-  // We verify with RESEND_WEBHOOK_SECRET and forward the message body to
-  // RESEND_INBOUND_FORWARD_TO. Leaving either unset disables forwarding.
-  RESEND_WEBHOOK_SECRET: optionalString,
-  RESEND_INBOUND_FORWARD_TO: z.preprocess(blankToUndefined, z.string().email().optional()),
+  // Email — the Resend SDK uses Letterpier's compatible API.
+  LETTERPIER_API_KEY: optionalString,
+  LETTERPIER_BASE_URL: z.preprocess(
+    blankToUndefined,
+    z.literal('https://app.letterpier.com').default('https://app.letterpier.com'),
+  ),
+  // Keep display names and mailbox names on the verified production domain.
+  LETTERPIER_FROM: optionalString,
+  // Incoming webhooks contain metadata only; the mail helper fetches the
+  // body and attachments with a full-access live key before forwarding.
+  LETTERPIER_WEBHOOK_SECRET: optionalString,
+  LETTERPIER_INBOUND_FORWARD_TO: z.preprocess(blankToUndefined, z.string().email().optional()),
 
   // R2
   R2_ACCOUNT_ID: optionalString,
@@ -142,12 +142,12 @@ export const features = {
   managedKeys: Boolean(env.OPENBAO_URL && env.OPENBAO_RUNTIME_TOKEN && env.OPENBAO_ADMIN_TOKEN),
   githubAuth: Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET),
   googleAuth: Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET),
-  emailOtp: Boolean(env.RESEND_API_KEY && env.RESEND_FROM),
+  emailOtp: Boolean(env.LETTERPIER_API_KEY && env.LETTERPIER_FROM),
   emailInboundForward: Boolean(
-    env.RESEND_API_KEY &&
-    env.RESEND_FROM &&
-    env.RESEND_WEBHOOK_SECRET &&
-    env.RESEND_INBOUND_FORWARD_TO,
+    env.LETTERPIER_API_KEY &&
+    env.LETTERPIER_FROM &&
+    env.LETTERPIER_WEBHOOK_SECRET &&
+    env.LETTERPIER_INBOUND_FORWARD_TO,
   ),
   r2: Boolean(
     env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET,

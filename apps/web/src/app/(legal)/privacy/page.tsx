@@ -157,8 +157,8 @@ export default function PrivacyPolicyPage() {
           (encrypted ciphertext storage)
         </li>
         <li>
-          <a href="https://resend.com" target="_blank" rel="noreferrer">
-            Resend
+          <a href="https://app.letterpier.com" target="_blank" rel="noreferrer">
+            Letterpier
           </a>{' '}
           (transactional emails — sign-in codes, invites)
         </li>
@@ -191,7 +191,11 @@ export default function PrivacyPolicyPage() {
       <p>
         Neon and Vercel infrastructure is selected at deployment time. R2 objects are stored in the
         bucket region the operator configured (the EU jurisdiction is supported for EU-resident
-        customers). Email is sent through Resend, which operates globally.
+        customers). Email is sent through Letterpier. See its{' '}
+        <a href="https://app.letterpier.com/legal/subprocessors" target="_blank" rel="noreferrer">
+          subprocessor list
+        </a>{' '}
+        for the email infrastructure it uses.
       </p>
 
       <h2>Retention</h2>

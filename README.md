@@ -98,8 +98,8 @@ Requirements:
 - pnpm 11+
 - Postgres ([Neon](https://neon.tech) recommended)
 - Cloudflare R2 bucket
-- [Resend](https://resend.com) account (optional — without it, OTP codes
-  print to the dev terminal)
+- [Letterpier](https://app.letterpier.com) project (optional in development — without
+  it, OTP codes print to the dev terminal). See [email setup](docs/email.md).
 
 ```sh
 git clone https://github.com/michael-ketzer/envstore.xyz

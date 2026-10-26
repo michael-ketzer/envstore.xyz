@@ -6,8 +6,7 @@ import { z } from 'zod';
 // Treat empty / whitespace-only strings as "unset". Otherwise `OPT=""` in
 // .env (as our .env.example showed) would fail .min(1)/.email()/.url() rather
 // than being absent.
-const blankToUndefined = (v: unknown) =>
-  typeof v === 'string' && v.trim() === '' ? undefined : v;
+const blankToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 
 const optionalString = z.preprocess(blankToUndefined, z.string().min(1).optional());
 const optionalUrl = z.preprocess(blankToUndefined, z.string().url().optional());
@@ -31,21 +30,18 @@ const serverEnvSchema = z.object({
   AUTH_GOOGLE_ID: optionalString,
   AUTH_GOOGLE_SECRET: optionalString,
 
-  // Email
-  RESEND_API_KEY: optionalString,
-  // Resend accepts both bare addresses and `Display Name <addr@host>` format,
-  // so we validate as a non-empty string and let Resend reject malformed values
-  // at send time.
-  RESEND_FROM: optionalString,
-  // Inbound email forwarding. Resend sends `email.received` webhooks (Svix-
-  // signed) when mail hits any address on our domain (legal@, privacy@, etc.).
-  // We verify with RESEND_WEBHOOK_SECRET and forward the message body to
-  // RESEND_INBOUND_FORWARD_TO. Leaving either unset disables forwarding.
-  RESEND_WEBHOOK_SECRET: optionalString,
-  RESEND_INBOUND_FORWARD_TO: z.preprocess(
+  // Email — the Resend SDK uses Letterpier's compatible API.
+  LETTERPIER_API_KEY: optionalString,
+  LETTERPIER_BASE_URL: z.preprocess(
     blankToUndefined,
-    z.string().email().optional(),
+    z.literal('https://app.letterpier.com').default('https://app.letterpier.com'),
   ),
+  // Keep display names and mailbox names on the verified production domain.
+  LETTERPIER_FROM: optionalString,
+  // Incoming webhooks contain metadata only; the mail helper fetches the
+  // body and attachments with a full-access live key before forwarding.
+  LETTERPIER_WEBHOOK_SECRET: optionalString,
+  LETTERPIER_INBOUND_FORWARD_TO: z.preprocess(blankToUndefined, z.string().email().optional()),
 
   // R2
   R2_ACCOUNT_ID: optionalString,
@@ -83,6 +79,30 @@ const serverEnvSchema = z.object({
   // running un-authed deletes.
   CRON_SECRET: optionalString,
 
+  // Opt-in managed-key service. Use distinct least-privilege Transit tokens.
+  OPENBAO_URL: optionalUrl,
+  OPENBAO_RUNTIME_TOKEN: optionalString,
+  OPENBAO_ADMIN_TOKEN: optionalString,
+  // Upload-only broker for age-encrypted OpenBao snapshots. No R2 credentials
+  // need to leave this deployment; the host cannot read or delete other data.
+  OPENBAO_BACKUP_TOKEN: optionalString,
+  OPENBAO_TRANSIT_MOUNT: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .default('transit'),
+  ),
+  // Enable only behind an ingress that OVERWRITES X-Forwarded-Proto and
+  // prevents direct access to the app. Otherwise request URLs must be HTTPS.
+  MANAGED_KEYS_TRUST_PROXY: z
+    .preprocess(blankToUndefined, z.enum(['true', 'false']).default('false'))
+    .transform((v) => v === 'true'),
+  // The audience Vercel OIDC tokens of managed-key applications must carry.
+  // Defaults to the origin of NEXT_PUBLIC_APP_URL (e.g. https://www.envstore.xyz).
+  MANAGED_KEYS_AUDIENCE: optionalUrl,
+  NEXT_PUBLIC_APP_URL: optionalUrl,
+
   // Number of trusted proxy hops between the public internet and this
   // process. Rate limiters key on the client IP, which we extract from
   // x-forwarded-for; an untrusted appender to that header would otherwise
@@ -119,19 +139,18 @@ export const env = parsed.data;
 
 // Feature flags derived from which env vars are present.
 export const features = {
+  managedKeys: Boolean(env.OPENBAO_URL && env.OPENBAO_RUNTIME_TOKEN && env.OPENBAO_ADMIN_TOKEN),
   githubAuth: Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET),
   googleAuth: Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET),
-  emailOtp: Boolean(env.RESEND_API_KEY && env.RESEND_FROM),
+  emailOtp: Boolean(env.LETTERPIER_API_KEY && env.LETTERPIER_FROM),
   emailInboundForward: Boolean(
-    env.RESEND_API_KEY &&
-      env.RESEND_FROM &&
-      env.RESEND_WEBHOOK_SECRET &&
-      env.RESEND_INBOUND_FORWARD_TO,
+    env.LETTERPIER_API_KEY &&
+    env.LETTERPIER_FROM &&
+    env.LETTERPIER_WEBHOOK_SECRET &&
+    env.LETTERPIER_INBOUND_FORWARD_TO,
   ),
   r2: Boolean(
     env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET,
   ),
-  paddle: Boolean(
-    env.PADDLE_API_KEY && env.PADDLE_WEBHOOK_SECRET && env.PADDLE_PRICE_ID_TEAM,
-  ),
+  paddle: Boolean(env.PADDLE_API_KEY && env.PADDLE_WEBHOOK_SECRET && env.PADDLE_PRICE_ID_TEAM),
 } as const;

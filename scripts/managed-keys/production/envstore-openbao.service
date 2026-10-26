@@ -1,0 +1,21 @@
+[Unit]
+Description=Envstore OpenBao Transit with TPM-protected unsealing
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/envstore-openbao
+RuntimeDirectory=envstore-openbao
+RuntimeDirectoryMode=0700
+LoadCredentialEncrypted=seal.key:/etc/envstore-openbao/seal.key.cred
+ExecStartPre=/usr/bin/install -o 100 -g 1000 -m 0400 %d/seal.key /run/envstore-openbao/seal.key
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -13,13 +13,26 @@ concurrency:
 env:
   # Stubs sufficient to satisfy schema validation in env.ts. No real
   # connection ever happens during typecheck / build / lint.
-  DATABASE_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full"
-  DIRECT_URL: "postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full"
-  AUTH_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  NEXT_PUBLIC_APP_URL: "http://localhost:3000"
-  PADDLE_ENV: "sandbox"
+  DATABASE_URL: 'postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full'
+  DIRECT_URL: 'postgresql://stub:stub@stub.example.com:5432/stub?sslmode=verify-full'
+  AUTH_SECRET: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+  PADDLE_ENV: 'sandbox'
 
 jobs:
+  managed-keys:
+    name: managed keys integration (OpenBao + PostgreSQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: scripts/managed-keys/smoke.sh
+
   check:
     name: typecheck + lint + build
     runs-on: ubuntu-latest
@@ -32,12 +45,12 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: '24'
           cache: pnpm
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3"
+          bun-version: '1.3'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

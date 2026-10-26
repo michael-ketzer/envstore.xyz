@@ -94,11 +94,30 @@ export async function presignPut(
   key: string,
   opts: { sizeBytes: number; sha256Hex: string; expiresIn?: number },
 ): Promise<PresignedPut> {
+  return presignBoundedPut(key, opts, LIMITS.maxCiphertextBytes);
+}
+
+// Dedicated namespace and independent size cap for encrypted key-service backups.
+export async function presignManagedKeyBackup(
+  key: string,
+  opts: { sizeBytes: number; sha256Hex: string; expiresIn?: number },
+): Promise<PresignedPut> {
+  if (
+    !/^managed-key-backups\/media-server\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.tar\.age$/.test(key)
+  ) {
+    throw new Error('Invalid managed-key backup path');
+  }
+  return presignBoundedPut(key, opts, 128 * 1024 * 1024);
+}
+
+async function presignBoundedPut(
+  key: string,
+  opts: { sizeBytes: number; sha256Hex: string; expiresIn?: number },
+  maxBytes: number,
+): Promise<PresignedPut> {
   const { bucket } = requireR2();
-  if (opts.sizeBytes < 1 || opts.sizeBytes > LIMITS.maxCiphertextBytes) {
-    throw new Error(
-      `presigned PUT must declare a size between 1 and ${LIMITS.maxCiphertextBytes} bytes`,
-    );
+  if (opts.sizeBytes < 1 || opts.sizeBytes > maxBytes) {
+    throw new Error(`presigned PUT must declare a size between 1 and ${maxBytes} bytes`);
   }
   if (!/^[0-9a-f]{64}$/.test(opts.sha256Hex)) {
     throw new Error('presigned PUT requires a 64-char lowercase hex sha256');

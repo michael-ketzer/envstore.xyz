@@ -1,0 +1,15 @@
+[Unit]
+Description=Back up envstore OpenBao to encrypted offsite storage
+After=envstore-openbao.service network-online.target
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+LoadCredentialEncrypted=operations.json:/etc/envstore-openbao/operations.json.cred
+ExecStart=/usr/bin/python3 /opt/envstore-openbao/maintenance.py backup
+TimeoutStartSec=600
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/envstore-openbao/maintenance /var/backups/envstore-openbao /run

@@ -44,3 +44,4 @@ coverage/
 
 # CLI binaries
 apps/cli/bin/
+.vercel

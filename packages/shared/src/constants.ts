@@ -136,6 +136,7 @@ export const RESERVED_WORKSPACE_SLUGS = new Set([
   'imprint',
   'paddle',
   'resend',
+  'letterpier',
   'internal',
   'well-known',
   // JS-keyword-shaped — leak from naive front-end stringification of nullish

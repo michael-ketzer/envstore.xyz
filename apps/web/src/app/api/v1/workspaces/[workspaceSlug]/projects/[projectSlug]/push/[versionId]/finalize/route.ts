@@ -111,7 +111,7 @@ export async function POST(req: Request, ctx: Ctx) {
     r2Skipped = result.r2Skipped;
   } catch (err) {
     // Normalize non-Error throws to a usable string — matches the pattern in
-    // paddle/webhook and resend/webhook. `(err as Error).message` would be
+    // paddle/webhook. `(err as Error).message` would be
     // undefined for a thrown string/number/etc., which would land "undefined"
     // in both the audit-log metadata and the runtime log.
     pruneError = err instanceof Error ? err.message : String(err);

@@ -30,11 +30,12 @@ export async function POST(req: Request): Promise<Response> {
   const rawBody = await req.text();
   let event: LetterpierWebhookEnvelope;
   try {
-    event = new Webhook(env.LETTERPIER_WEBHOOK_SECRET).verify(rawBody, {
+    new Webhook(env.LETTERPIER_WEBHOOK_SECRET).verify(rawBody, {
       'svix-id': id,
       'svix-timestamp': timestamp,
       'svix-signature': signature,
-    }) as LetterpierWebhookEnvelope;
+    });
+    event = JSON.parse(rawBody) as LetterpierWebhookEnvelope;
   } catch {
     return apiError('Invalid Letterpier webhook signature.', 400);
   }

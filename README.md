@@ -94,7 +94,7 @@ recovery flow, by design.
 
 Requirements:
 
-- Node 20.9+ (developed on Node 24)
+- Node 22+ (developed on Node 24)
 - pnpm 11+
 - Postgres ([Neon](https://neon.tech) recommended)
 - Cloudflare R2 bucket

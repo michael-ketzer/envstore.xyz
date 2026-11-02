@@ -13,10 +13,10 @@
   "scripts": {
     "generate": "prisma generate",
     "build": "prisma generate",
-    "migrate": "dotenv -e ../../.env -e ../../.env.local -- prisma migrate dev",
-    "migrate:deploy": "dotenv -e ../../.env -e ../../.env.local -- prisma migrate deploy",
-    "push": "dotenv -e ../../.env -e ../../.env.local -- prisma db push",
-    "studio": "dotenv -e ../../.env -e ../../.env.local -- prisma studio",
+    "migrate": "node ./node_modules/dotenv-cli/cli.js -e ../../.env -e ../../.env.local -- prisma migrate dev",
+    "migrate:deploy": "node ./node_modules/dotenv-cli/cli.js -e ../../.env -e ../../.env.local -- prisma migrate deploy",
+    "push": "node ./node_modules/dotenv-cli/cli.js -e ../../.env -e ../../.env.local -- prisma db push",
+    "studio": "node ./node_modules/dotenv-cli/cli.js -e ../../.env -e ../../.env.local -- prisma studio",
     "format": "prisma format",
     "typecheck": "tsc --noEmit",
     "topo": "echo 'db topo ok'"

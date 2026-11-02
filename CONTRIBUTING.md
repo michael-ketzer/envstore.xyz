@@ -74,6 +74,10 @@ pnpm --filter @envstore/cli build   # Bun-compiled CLI binary
 
 CI runs `typecheck` + `lint` + `build` on every PR (see [.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
+TypeScript runs side by side: `@typescript/native` aliases TypeScript 7 and supplies
+`tsc` for typechecks, while `typescript` aliases `@typescript/typescript6` for tools
+such as typescript-eslint that still require the TypeScript 6 compiler API.
+
 ## Pull request checklist
 
 - [ ] Branched from `main`

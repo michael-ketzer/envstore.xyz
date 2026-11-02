@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@envstore/shared": "workspace:*",
-    "age-encryption": "^0.3.0"
+    "age-encryption": "^0.3.1"
   },
   "devDependencies": {
     "@envstore/config": "workspace:*",

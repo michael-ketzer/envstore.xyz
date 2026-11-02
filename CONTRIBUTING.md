@@ -6,7 +6,7 @@ Thanks for being here. envstore is AGPL — your changes will be open too.
 
 Requirements:
 
-- **Node 20.9+** (we develop on Node 24)
+- **Node 22+** (we develop on Node 24)
 - **pnpm 11+** — `npm install -g pnpm@11` or [corepack enable](https://nodejs.org/api/corepack.html)
 - **Bun 1.3+** for the CLI — `curl -fsSL https://bun.sh/install | bash`
 - **Postgres** — easiest path: [Neon](https://neon.tech) free tier

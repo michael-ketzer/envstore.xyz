@@ -1,7 +1,7 @@
 name: envstore-openbao
 services:
   openbao:
-    image: openbao/openbao:2.7.0@sha256:71156a1c6623a5fa3f5e61b0c6a8ead0faf0df29a778339188443551995d1315
+    image: openbao/openbao:2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9
     container_name: envstore-openbao
     command: ['server', '-config=/openbao/config/openbao.hcl']
     user: '100:1000'

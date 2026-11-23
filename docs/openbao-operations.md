@@ -1,7 +1,7 @@
 # Hosted OpenBao operations
 
 Deployment: `media-server` (`51.195.104.20`), `https://bao.envstore.xyz`,
-OpenBao **2.7.0**, dedicated Transit mount `transit`. Envstore production on
+OpenBao **2.7.3**, dedicated Transit mount `transit`. Envstore production on
 Vercel is its client. Application backends call **envstore**, using individually
 scoped `esmk_` credentials; they do not receive the OpenBao service tokens.
 See [managed-key API](managed-keys.md) for provisioning and application requests.
